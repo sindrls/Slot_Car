@@ -24,17 +24,17 @@ car_rot_inert = 0.001
 car_length = 0.1
 wheel_arm = 0.1
 
-K_p = 0
+K_p = 1
 D_d = 1
 
-regular_slide_speed_tresh = 0.1
-regular_slide_frict_coeff = 0.2
+regular_slide_speed_tresh = 0.01
+regular_slide_frict_coeff = 0.4
 regular_sin_scaling_coeff = 1.9
 
-vel_ref = 2
-speed_k_p = 0.1
+u = 0.1
 
-timesteps = 10000
+
+timesteps = 1000
 timestep = 0.01
 
 duration = timestep * timesteps
@@ -115,12 +115,6 @@ def alpha(x):
     return alpha_est * normalization_term
 
 
-
-def beta(x):
-    return (dd_phi_l_x(x[1]) * np.sin(x[0]) - dd_phi_l_y(x[1]) * np.cos(x[0])) * x[3]\
-         + (d_phi_l_x(x[1]) * np.cos(x[0]) + d_phi_l_y(x[1]) * np.sin(x[0])) * x[2]
-
-
 def mixing_term(x, t):
     mixing = np.zeros([2, 2])
 
@@ -174,7 +168,7 @@ def tire_friction_body(x):
     return body_friction
 
 
-def speed_control(v_ref, x, has_slid):
+def speed_control(u, x, has_slid):
     force = np.zeros(2)
 
     car_angle = np.arctan2(np.sin(x[0]), np.cos(x[0]))
@@ -193,7 +187,7 @@ def speed_control(v_ref, x, has_slid):
     if abs(np.dot(track_vector_norm, car_vector)) < 0.1:
         has_slid = True
 
-    motor_force = (K_p * speed_k_p * (v_ref - abs(x[3])) - D_d * x[3])
+    motor_force = (K_p * u - D_d * x[3])
 
     force[0] = -0.5 * np.sin(2 * theta_rel) * motor_force * car_length
     force[1] = np.cos(theta_rel) * motor_force
@@ -214,7 +208,7 @@ def slot_car_ode(x,t, sliding):
     dynamic_forces = dynamics(x, t)
     internal_forces = np.dot(mixing_mtx,dynamic_forces)
     body_friction = tire_friction_body(x)
-    speed_force, sliding = speed_control(vel_ref, x, sliding)
+    speed_force, sliding = speed_control(u, x, sliding)
     #print(x)
     #print(np.linalg.det(mixing_term(x,t)))
 

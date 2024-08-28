@@ -7,18 +7,68 @@ import casadi as ca
 import time
 import matplotlib.pyplot as plt
 import scipy
+import math
 
 import carrera_slot_car_track_spline_creator_class
+import simple_kalman_tracker
 
+import socket
+
+
+class CarreraUDPSender:
+    '''
+    Usage:
+
+    sender = CarreraUDPSender()
+    sender.send(80)
+
+    0 is the lowest speed, 255 is the highest
+
+    '''
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.addr = ("192.168.97.61", 12021) #!!! Make sure the IP is correct
+
+    def send(self, msg: int): # msg is in the 0-255 range
+        b_msg = msg.to_bytes(1, 'little')
+        self.sock.sendto(b_msg, self.addr)
 
 
 def transform_mtx_inv(mtx):
     transformation_inverse = np.zeros([4, 4])
-    transformation_inverse[0:3, 0:3] = mtx[0:3, 0:3].T
-    transformation_inverse[0:3, 3] = -mtx[0:3, 0:3].T @ mtx[0:3, 3]
+    transformation_inverse[0:3, 0:3] = np.transpose(mtx[0:3, 0:3])
+    transformation_inverse[0:3, 3] = -np.transpose(mtx[0:3, 0:3]) @ mtx[0:3, 3]
     transformation_inverse[3, 3] = 1
 
     return transformation_inverse
+
+
+def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
+    V_max = 150
+    K = 0.05
+    p = 0.1
+
+    d_phi_l_x = l_x.derivative()
+    d_phi_l_y = l_y.derivative()
+
+    dd_phi_l_x = d_phi_l_x.derivative()
+    dd_phi_l_y = d_phi_l_y.derivative()
+
+    exp_val = 0
+
+    for i in range(horizon):
+        phi_i = i * delta_phi  + predict_t * phi_dot + phi
+        d_phi_l_x_val = d_phi_l_x(phi_i)
+        d_phi_l_y_val = d_phi_l_y(phi_i)
+
+        dd_phi_l_x_val = dd_phi_l_x(phi_i)
+        dd_phi_l_y_val = dd_phi_l_y(phi_i)
+
+        kappa = abs((d_phi_l_x_val * dd_phi_l_y_val - dd_phi_l_x_val * d_phi_l_y_val))
+
+        exp_val = exp_val + (p**i) * kappa
+
+    return V_max * (math.e**(- K * exp_val))
 
 
 def ippe_pose_est(H):
@@ -99,10 +149,13 @@ class SlotCarTracker:
         self.y_vals = None
         self.x_vals = None
         self.carrera_track = None
-        self.vid = cv2.VideoCapture(2)  # this is the magic!
+        self.car_tracker = None
+        self.vid = cv2.VideoCapture(0)  # this is the magic!
 
-        self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-        self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+        self.udpSender = CarreraUDPSender()
 
         self.frame = self.vid.read()
 
@@ -116,16 +169,19 @@ class SlotCarTracker:
 
         self.race_track_reference_points = np.empty([2, 0])
 
-        self.camera_to_race_track = np.zeros([4, 4])
+        self.camera_to_race_track = np.asarray( [[-0.97224636,  0.22752535, -0.05449072, -0.46578975],
+ [ 0.23267879,  0.96466906, -0.12358875,  0.30330002],
+ [ 0.02444594, -0.13283755, -0.9908363,   1.50309065],
+ [ 0. ,         0. ,         0. ,         1.        ]])
 
         self.aruco_markings = np.asarray(
             [[0.0265, -0.0265, 0], [0.0265, 0.0265, 0], [-0.0265, 0.0265, 0], [-0.0265, -0.0265, 0]])
 
-        self.camera_mtx = np.asarray([[801.97181397, 0.00000000e+00, 642.52529483],
-                                 [0.00000000e+00, 801.64865261, 365.19553175],
-                                 [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
+        self.camera_mtx = np.asarray([[1.03425375e+03, 0.00000000e+00, 6.49022239e+02],
+                                      [0.00000000e+00, 1.03544210e+03, 3.77096134e+02],
+                                      [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 
-        self.distortion_mtx = np.asarray([[0.03649306, -0.06757704, -0.00136245, 0.0067907, 0.05633966]])
+        self.distortion_mtx = np.asarray([[ 0.22010133, -0.67669094,  0.00088557,  0.00120311,  0.63521202]])
 
         self.slot_car_length = 0.1
 
@@ -149,6 +205,7 @@ class SlotCarTracker:
     def detect_aruco_marker_pose(self):
         # Capture the video frame
         # by frame
+
         ret, self.frame = self.vid.read()
         timestamp = time.time() #Seconds since epoch
 
@@ -156,9 +213,9 @@ class SlotCarTracker:
         imgpoints = []
 
         # Display the resulting frame
-        cv2.imshow('frame', self.frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            print("ywy")
+        #cv2.imshow('frame', self.frame)
+        #if cv2.waitKey(1) & 0xFF == ord('q'):
+        #    print("ywy")
 
         transformation_mtx = np.zeros([4, 4])
         got_detection = False
@@ -184,6 +241,7 @@ class SlotCarTracker:
     def get_aruco_centre_pos(self):
         # Capture the video frame
         # by frame
+
         ret, self.frame = self.vid.read()
         timestamp = time.time() #Seconds since epoch
 
@@ -192,9 +250,9 @@ class SlotCarTracker:
         centre_pos = np.empty([2,0])
 
         # Display the resulting frame
-        cv2.imshow('frame', self.frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            print("ywy")
+        #cv2.imshow('frame', self.frame)
+        #if cv2.waitKey(1) & 0xFF == ord('q'):
+        #    print("ywy")
 
         transformation_mtx = np.zeros([4, 4])
         got_detection = False
@@ -209,6 +267,7 @@ class SlotCarTracker:
             centre_pos = np.mean(np.asarray(corners2), axis=1)
 
             test[0] = centre_pos[0]
+
             test[1] = centre_pos[1]
 
         return got_detection, test
@@ -228,9 +287,12 @@ class SlotCarTracker:
             num_tries = 0
             print("Section idx: ", section_idx)
             name = input("press when ready to take image, at pos: ")
-            while not_finished or num_tries > 100:
+            for j in range(30):
+                ret, self.frame = self.vid.read()
+            while not_finished and num_tries < 10:
                 got_detection, centre_pos = self.get_aruco_centre_pos()
                 num_tries = num_tries + 1
+                print("New try: ", num_tries)
 
 
 
@@ -252,15 +314,9 @@ class SlotCarTracker:
 
         self.camera_to_race_track = self.get_transformation_mtx(rvecs, tvecs)
 
+        print("Camera to track transform is: ", self.camera_to_race_track)
+        print("Camera to track translation is: ", tvecs)
 
-    def calculate_camera_to_race_track_transform_test(self):
-
-        track_pos = np.array([])
-        measured_track_pos = np.array([])
-
-        ret, rvecs, tvecs = cv2.solvePnP(track_pos, measured_track_pos, self.camera_mtx, self.distortion_mtx)
-
-        self.camera_to_race_track = self.get_transformation_mtx(rvecs, tvecs)
 
     def get_transformation_mtx(self, rvecs, tvecs):
 
@@ -289,6 +345,8 @@ class SlotCarTracker:
 
         self.l_y = scipy.interpolate.CubicSpline(phi_vals, y_vals)
 
+        self.car_tracker = simple_kalman_tracker.SlotCarKalmanTracker(carrera_track_list)
+
 
     def update_base_mtx(self):
 
@@ -300,17 +358,19 @@ class SlotCarTracker:
         got_detection, transform_mtx_meas, timestamp = self.detect_aruco_marker_pose()
 
         new_pos = np.zeros([4, 1])
-        new_pos[0:3, 0] = [- self.slot_car_length, 0, 0]
+        new_pos[0:3, 0] = transform_mtx_meas[0:3, 3]
         new_pos[3, 0] = 1
-        delta_pos = self.base_mtx @ transform_mtx_inv(transform_mtx_meas) @ new_pos
+        delta_pos = transform_mtx_inv(self.camera_to_race_track) @ new_pos
 
-        delta_rot = self.base_mtx[0:3, 0:3].T @ transform_mtx_meas[0:3, 0:3]
+        print("meas_pos is: ", new_pos)
 
-        r = Rotation.from_matrix(delta_rot)
+        #delta_rot = self.base_mtx[0:3, 0:3].T @ transform_mtx_meas[0:3, 0:3]
 
-        angles = r.as_euler("zyx", degrees=True)
+        #r = Rotation.from_matrix(delta_rot)
 
-        return delta_pos[0:2], angles[0], timestamp
+        #angles = r.as_euler("zyx", degrees=True)
+
+        return delta_pos[0:2], #angles[0], timestamp
 
     def detect_closed_loop_track(self, use_time_parametrisation, delta_param):
 
@@ -385,11 +445,93 @@ class SlotCarTracker:
         plt.ylabel('track_detections')
         plt.show()
 
+    def get_pixel_to_track_plane_intersection(self, pixel_position):
 
+        pixels = np.zeros((1, 1, 2))
+
+        pixels[0, 0, 0] = pixel_position[0, 0]
+        pixels[0, 0, 1] = pixel_position[0, 1]
+
+        direction_vector = np.squeeze(cv2.undistortPoints(pixels, self.camera_mtx, self.distortion_mtx))
+
+
+        pixel_direction = np.asarray([direction_vector[0], direction_vector[1], 1])
+
+        track_plane_norm_vec = self.camera_to_race_track[2, 0:3]
+        track_plane_centre = self.camera_to_race_track[0:3, 3]
+
+        intersection_distance = np.dot(track_plane_centre, track_plane_norm_vec) / np.dot(pixel_direction, track_plane_norm_vec)
+
+        intersection_pos = pixel_direction * intersection_distance
+
+        new_pos = np.asarray([intersection_pos[0], intersection_pos[1], intersection_pos[2], 1])
+        #print("New pos is: ", new_pos)
+        test_pos = transform_mtx_inv(self.camera_to_race_track) @ new_pos
+        #print("Full pos is: ", test_pos[0:3])
+
+        return (transform_mtx_inv(self.camera_to_race_track) @ new_pos)[0:2]
+    def get_xy_position(self):
+        while True:
+            pixel_position = self.get_aruco_centre_pos()
+            track_position = self.get_pixel_to_track_plane_intersection(pixel_position)
+            print("Position is: ", track_position)
 
     def finnish_tracking(self):
         # Destroy all the windows
         cv2.destroyAllWindows()
+
+    def get_moving_objects(self):
+        backSub = cv2.createBackgroundSubtractorMOG2()
+        prev_timestamp = time.time()
+        while True:
+            new_timestamp = time.time()
+            time_step = new_timestamp - prev_timestamp
+            prev_timestamp = new_timestamp
+
+            self.car_tracker.predict_state(time_step)
+
+            ret, self.frame = self.vid.read()
+            if ret:
+                fg_mask = backSub.apply(self.frame)
+                contours, hierarchy = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                retval, mask_thresh = cv2.threshold(fg_mask, 220, 255, cv2.THRESH_BINARY)
+                # set the kernal
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                # Apply erosion
+                mask_eroded = cv2.morphologyEx(mask_thresh, cv2.MORPH_OPEN, kernel)
+
+                min_contour_area = 2000  # Define your minimum area threshold
+                large_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
+
+                frame_out = self.frame.copy()
+                for cnt in large_contours:
+                    x, y, w, h = cv2.boundingRect(cnt)
+                    frame_out = cv2.rectangle(self.frame, (x, y), (x + w, y + h), (0, 0, 200), 3)
+                    centre_pos = np.zeros((1, 2))
+                    centre_pos[0, 0] = x + w / 2.0
+                    centre_pos[0, 1] = y + h / 2.0
+                    pos = self.get_pixel_to_track_plane_intersection(centre_pos)
+
+                    R = np.zeros((2, 2))
+                    R[0, 0] = 0.5
+                    R[1, 1] = 0.5
+
+                    self.car_tracker.measurement_update(pos, R)
+                    #print("Car pos is: ", pos)
+                    car_state = self.car_tracker.get_state()
+                    print("Car state is: ", car_state)
+
+                    v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], 0.5, 10, 0.4)
+                    print("V_ref is: ", v_ref)
+
+                    self.udpSender.send(int(v_ref))
+
+                # Display the resulting frame
+                cv2.imshow('Frame_final', frame_out)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
 
 
 if __name__ == "__main__":
@@ -397,18 +539,23 @@ if __name__ == "__main__":
     trackSectionList = []
 
 
-    trackSectionList.append(0)
+
     trackSectionList.append(1)
     trackSectionList.append(1)
     trackSectionList.append(1)
+
     trackSectionList.append(0)
     trackSectionList.append(0)
     trackSectionList.append(0)
+
     trackSectionList.append(1)
     trackSectionList.append(1)
     trackSectionList.append(1)
+
     trackSectionList.append(0)
     trackSectionList.append(0)
+    trackSectionList.append(0)
+
 
 
 
@@ -421,7 +568,11 @@ if __name__ == "__main__":
 
     #slotCarTracker.calculate_camera_to_race_track_transform_test() #Debug testing
 
-    slotCarTracker.calculate_camera_to_race_track_transform() #cameraa code
+    #slotCarTracker.calculate_camera_to_race_track_transform() #cameraa code
+
+    #slotCarTracker.get_xy_position()
+
+    slotCarTracker.get_moving_objects()
 
 
 

@@ -19,8 +19,8 @@ def export_slot_car_ode_model() -> AcadosModel:
     car_length = 0.1 # car lenght [m]
 
     #Wheel constants
-    regular_slide_speed_tresh = 1
-    regular_slide_frict_coeff = 0.0
+    regular_slide_speed_tresh = 0.01
+    regular_slide_frict_coeff = 0.4
     regular_sin_scaling_coeff = 1.9
     wheel_arm = 0.1
 
@@ -86,14 +86,12 @@ def export_slot_car_ode_model() -> AcadosModel:
     mixing_term[0, 1] = -car_length * alpha
     mixing_term[1, 1] = 1
 
-    second_order_ode = inv(mixing_term) @ vert_vec
-
     # Simplified friction model (check sign of vals):
 
     cart_vel = MX.zeros(2, 1)
 
-    cart_vel[0, 0] = d_phi_l_x * x[3] - car_length * sin_theta * x[2]
-    cart_vel[1, 0] = d_phi_l_y * x[3] + car_length * cos_theta * x[2]
+    cart_vel[0, 0] = d_phi_l_x * x[3] - wheel_arm * sin_theta * x[2]
+    cart_vel[1, 0] = d_phi_l_y * x[3] + wheel_arm * cos_theta * x[2]
 
     rot_mat = MX.zeros(2, 2)
 

@@ -43,11 +43,15 @@ def main():
 
     jacobian = casadi.jacobian(sim.model.f_expl_expr, sim.model.x)
 
+    turn_radius = 0.3
+
+    path_length = 10 * turn_radius + np.pi * 4 * turn_radius
+
     #print("Jacobian is:", jacobian)
 
     Tf = 0.01
     nx = sim.model.x.rows()
-    N_sim = 1000
+    N_sim = 10000
 
 
     # set simulation time
@@ -71,7 +75,11 @@ def main():
     print("X_i: ", simX[:, 0])
     for i in range(N_sim):
         # Note that xdot is only used if an IRK integrator is used
-        simX[:, i+1] = acados_integrator.simulate(x=simX[:, i], u=u0, xdot=xdot_init)
+        x_vals = acados_integrator.simulate(x=simX[:, i], u=u0, xdot=xdot_init)
+        if x_vals[1] > path_length:
+            x_vals[1] = x_vals[1] - path_length
+
+        simX[:, i + 1] = x_vals
         #print("X_i: ", simX[i,:])
 
     S_forw = acados_integrator.get("S_forw")
