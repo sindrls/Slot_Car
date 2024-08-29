@@ -1,9 +1,6 @@
 # import the opencv library
 import cv2
-import apriltag
 import numpy as np
-from scipy.spatial.transform import Rotation
-import casadi as ca
 import time
 import matplotlib.pyplot as plt
 import scipy
@@ -11,27 +8,8 @@ import math
 
 import carrera_slot_car_track_spline_creator_class
 import simple_kalman_tracker
+from udp_sender import CarreraUDPSender
 
-import socket
-
-
-class CarreraUDPSender:
-    '''
-    Usage:
-
-    sender = CarreraUDPSender()
-    sender.send(80)
-
-    0 is the lowest speed, 255 is the highest
-
-    '''
-    def __init__(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.addr = ("192.168.97.61", 12021) #!!! Make sure the IP is correct
-
-    def send(self, msg: int): # msg is in the 0-255 range
-        b_msg = msg.to_bytes(1, 'little')
-        self.sock.sendto(b_msg, self.addr)
 
 
 def transform_mtx_inv(mtx):
@@ -57,7 +35,7 @@ def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
     exp_val = 0
 
     for i in range(horizon):
-        phi_i = i * delta_phi  + predict_t * phi_dot + phi
+        phi_i = i * delta_phi + predict_t * phi_dot + phi
         d_phi_l_x_val = d_phi_l_x(phi_i)
         d_phi_l_y_val = d_phi_l_y(phi_i)
 
@@ -69,74 +47,6 @@ def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
         exp_val = exp_val + (p**i) * kappa
 
     return V_max * (math.e**(- K * exp_val))
-
-
-def ippe_pose_est(H):
-    v = H[0:2, 2]
-    J = np.asarray([[H[0, 0] - H[2, 0] * H[0, 2], H[0, 1] - H[2, 1] * H[0, 2]],
-                    [H[1, 0] - H[2, 0] * H[1, 2], H[1, 1] - H[2, 1] * H[1, 2]]])
-
-    v_vec = np.asarray([v[0], v[1], 1])
-
-    c_theta_norm = np.linalg.norm(v_vec)
-    cos_theta = 1 / c_theta_norm
-
-    sin_theta = np.sqrt(1 - (1 / np.pow(c_theta_norm, 2)))
-
-    test2 = cos_theta * cos_theta + sin_theta * sin_theta
-
-    k_skew = (1 / np.linalg.norm(v)) * np.asarray([[0, 0, v[0]],
-                                                          [0, 0, v[1]],
-                                                          [-v[0], -v[1], 0]])
-
-    R_v = np.identity(3) + sin_theta * k_skew + (1 - cos_theta) * np.matmul(k_skew, k_skew)
-
-
-    B_mtx_pre = np.asarray([[1, 0, -v[0]], [0, 1, -v[1]]])
-
-    B_pre = B_mtx_pre @ R_v
-
-    A = np.linalg.solve(B_pre[:, 0:2], J)
-
-    lambda_mtx = A @ A.T
-
-    lambda_partial_val = np.pow(lambda_mtx[0, 0] - lambda_mtx[1, 1], 2) + 4 * lambda_mtx[1, 0] * lambda_mtx[1, 0]
-
-    lambda_val = np.sqrt(0.5 * (lambda_mtx[0, 0] + lambda_mtx[1, 1] + np.sqrt(lambda_partial_val)))
-
-    R_22 = (1 / lambda_val) * A
-
-    U, S, V = np.linalg.svd(np.eye(2) - R_22.T @ R_22)
-
-    b = U[:, 0]
-
-    param_vec_cross = np.asarray([[R_22[0, 0], R_22[0, 1]],
-                            [R_22[1, 0], R_22[1, 1]],
-                            [b[0], b[1]]])
-
-    distance = np.linalg.norm((1 / lambda_val) * v_vec)
-
-    param_vec = np.linalg.cross(param_vec_cross[:, 0], param_vec_cross[:, 1])
-
-    R_1 =  np.matmul(R_v, np.asarray([[R_22[0, 0], R_22[0, 1], param_vec[0]],
-                                    [R_22[1, 0], R_22[1, 1], param_vec[1]],
-                                    [b[0], b[1], param_vec[2]]]))
-
-    R_2 = np.matmul(R_v, np.asarray([[R_22[0, 0], R_22[0, 1], -param_vec[0]],
-                                     [R_22[1, 0], R_22[1, 1], -param_vec[1]],
-                                     [-b[0], -b[1], param_vec[2]]]))
-
-    print("Distance est is: ", distance)
-    #print("Det is: ", np.linalg.det(R_v))
-
-
-
-
-
-
-
-
-
 
 
 class SlotCarTracker:
@@ -169,10 +79,10 @@ class SlotCarTracker:
 
         self.race_track_reference_points = np.empty([2, 0])
 
-        self.camera_to_race_track = np.asarray( [[-0.97224636,  0.22752535, -0.05449072, -0.46578975],
- [ 0.23267879,  0.96466906, -0.12358875,  0.30330002],
- [ 0.02444594, -0.13283755, -0.9908363,   1.50309065],
- [ 0. ,         0. ,         0. ,         1.        ]])
+        self.camera_to_race_track = np.asarray([[-0.97224636,  0.22752535, -0.05449072, -0.46578975],
+                                                [ 0.23267879,  0.96466906, -0.12358875,  0.30330002],
+                                                [ 0.02444594, -0.13283755, -0.9908363,   1.50309065],
+                                                [ 0. ,         0. ,         0. ,         1.        ]])
 
         self.aruco_markings = np.asarray(
             [[0.0265, -0.0265, 0], [0.0265, 0.0265, 0], [-0.0265, 0.0265, 0], [-0.0265, -0.0265, 0]])
@@ -201,16 +111,14 @@ class SlotCarTracker:
 
         self.use_time_parametrisation = True
 
-
     def detect_aruco_marker_pose(self):
         # Capture the video frame
         # by frame
 
         ret, self.frame = self.vid.read()
-        timestamp = time.time() #Seconds since epoch
+        timestamp = time.time()  # Seconds since epoch
 
         gray_image = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-        imgpoints = []
 
         # Display the resulting frame
         #cv2.imshow('frame', self.frame)
@@ -237,24 +145,14 @@ class SlotCarTracker:
 
         return got_detection, transformation_mtx, timestamp
 
-
     def get_aruco_centre_pos(self):
         # Capture the video frame
         # by frame
 
         ret, self.frame = self.vid.read()
-        timestamp = time.time() #Seconds since epoch
 
         gray_image = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-        imgpoints = []
-        centre_pos = np.empty([2,0])
-
-        # Display the resulting frame
-        #cv2.imshow('frame', self.frame)
-        #if cv2.waitKey(1) & 0xFF == ord('q'):
-        #    print("ywy")
-
-        transformation_mtx = np.zeros([4, 4])
+        centre_pos = np.empty([2, 0])
         got_detection = False
 
         # Detect the markers
@@ -272,14 +170,12 @@ class SlotCarTracker:
 
         return got_detection, test
 
-
     def calculate_camera_to_race_track_transform(self):
 
         measured_track_x_pos = np.empty(0)
         measured_track_y_pos = np.empty(0)
         track_x_pos = np.empty(0)
         track_y_pos = np.empty(0)
-
 
         section_idx = 0
         for i in self.end_section_positions:
@@ -293,8 +189,6 @@ class SlotCarTracker:
                 got_detection, centre_pos = self.get_aruco_centre_pos()
                 num_tries = num_tries + 1
                 print("New try: ", num_tries)
-
-
 
                 if got_detection:
                     measured_track_x_pos = np.concatenate([measured_track_x_pos, centre_pos[0, :]])
@@ -320,7 +214,7 @@ class SlotCarTracker:
 
     def get_transformation_mtx(self, rvecs, tvecs):
 
-        transformation_mtx = np.zeros( [4, 4])
+        transformation_mtx = np.zeros([4, 4])
 
         rotationMtx = cv2.Rodrigues(rvecs)
 
@@ -370,7 +264,7 @@ class SlotCarTracker:
 
         #angles = r.as_euler("zyx", degrees=True)
 
-        return delta_pos[0:2], #angles[0], timestamp
+        return delta_pos[0:2],  # angles[0], timestamp
 
     def detect_closed_loop_track(self, use_time_parametrisation, delta_param):
 
@@ -378,7 +272,7 @@ class SlotCarTracker:
 
         prev_timestamp = time.time()
         start_time = prev_timestamp
-        prev_pos = np.asarray([0,0,0])
+        prev_pos = np.asarray([0, 0, 0])
         tot_dist = 0
         add_detection = False
         param_val = 0
@@ -415,7 +309,7 @@ class SlotCarTracker:
                     prev_pos = transformation_mtx[0:3, 3]
 
                     new_detection = np.zeros([3, 1])
-                    new_detection[0:3,0] = (transformation_mtx @ transform_mtx_inv(self.base_mtx) ) [0:3,3]
+                    new_detection[0:3, 0] = (transformation_mtx @ transform_mtx_inv(self.base_mtx))[0:3, 3]
 
                     #new_pos = np.zeros([4, 1])
                     #ew_pos[0:3, 0] = [- self.slot_car_length, 0, 0][0:3, 3]
@@ -434,7 +328,7 @@ class SlotCarTracker:
                     if self.out_of_start and (start_distance < self.start_radius * 0.5):
                         self.curve_closed = True
 
-        plt.plot(self.track_detections[0,:], self.track_detections[1, :])
+        plt.plot(self.track_detections[0, :], self.track_detections[1, :])
 
         spline_points = np.linspace(0, self.phi_vals[-1], 1000)
 
@@ -465,11 +359,9 @@ class SlotCarTracker:
         intersection_pos = pixel_direction * intersection_distance
 
         new_pos = np.asarray([intersection_pos[0], intersection_pos[1], intersection_pos[2], 1])
-        #print("New pos is: ", new_pos)
-        test_pos = transform_mtx_inv(self.camera_to_race_track) @ new_pos
-        #print("Full pos is: ", test_pos[0:3])
 
         return (transform_mtx_inv(self.camera_to_race_track) @ new_pos)[0:2]
+
     def get_xy_position(self):
         while True:
             pixel_position = self.get_aruco_centre_pos()
@@ -495,10 +387,6 @@ class SlotCarTracker:
                 fg_mask = backSub.apply(self.frame)
                 contours, hierarchy = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 retval, mask_thresh = cv2.threshold(fg_mask, 220, 255, cv2.THRESH_BINARY)
-                # set the kernal
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-                # Apply erosion
-                mask_eroded = cv2.morphologyEx(mask_thresh, cv2.MORPH_OPEN, kernel)
 
                 min_contour_area = 2000  # Define your minimum area threshold
                 large_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
@@ -533,13 +421,10 @@ class SlotCarTracker:
                     break
 
 
-
 if __name__ == "__main__":
 
     trackSectionList = []
 
-
-
     trackSectionList.append(1)
     trackSectionList.append(1)
     trackSectionList.append(1)
@@ -555,16 +440,12 @@ if __name__ == "__main__":
     trackSectionList.append(0)
     trackSectionList.append(0)
     trackSectionList.append(0)
-
-
-
 
     slotCarTracker = SlotCarTracker()
 
     slotCarTracker.load_track(trackSectionList)
 
     #slotCarTracker.detect_closed_loop_track(False, 0.05)
-
 
     #slotCarTracker.calculate_camera_to_race_track_transform_test() #Debug testing
 
@@ -573,14 +454,3 @@ if __name__ == "__main__":
     #slotCarTracker.get_xy_position()
 
     slotCarTracker.get_moving_objects()
-
-
-
-
-
-
-
-
-
-
-
