@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 import scipy
 import math
 
-import carrera_slot_car_track_spline_creator_class
+from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 import simple_kalman_tracker
 from udp_sender import CarreraUDPSender
+from utl import p_save, p_load
 
 
 
@@ -79,19 +80,10 @@ class SlotCarTracker:
 
         self.race_track_reference_points = np.empty([2, 0])
 
-        self.camera_to_race_track = np.asarray([[-0.97224636,  0.22752535, -0.05449072, -0.46578975],
-                                                [ 0.23267879,  0.96466906, -0.12358875,  0.30330002],
-                                                [ 0.02444594, -0.13283755, -0.9908363,   1.50309065],
-                                                [ 0. ,         0. ,         0. ,         1.        ]])
-
-        self.aruco_markings = np.asarray(
-            [[0.0265, -0.0265, 0], [0.0265, 0.0265, 0], [-0.0265, 0.0265, 0], [-0.0265, -0.0265, 0]])
-
-        self.camera_mtx = np.asarray([[1.03425375e+03, 0.00000000e+00, 6.49022239e+02],
-                                      [0.00000000e+00, 1.03544210e+03, 3.77096134e+02],
-                                      [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
-
-        self.distortion_mtx = np.asarray([[ 0.22010133, -0.67669094,  0.00088557,  0.00120311,  0.63521202]])
+        self.camera_to_race_track = p_load("camera_to_race_track")
+        self.aruco_markings = p_load("aruco_markings")
+        self.camera_mtx = p_load("camera_mtx")
+        self.distortion_mtx = p_load("distortion_mtx")
 
         self.slot_car_length = 0.1
 
@@ -226,7 +218,7 @@ class SlotCarTracker:
 
 
     def load_track(self, carrera_track_list):
-        self.carrera_track = carrera_slot_car_track_spline_creator_class.CarreraTrack(carrera_track_list)
+        self.carrera_track = CarreraTrack(carrera_track_list)
 
         x_vals, y_vals, phi_vals, end_section_positions = self.carrera_track.generate_track_spline(True)
 
@@ -348,7 +340,6 @@ class SlotCarTracker:
 
         direction_vector = np.squeeze(cv2.undistortPoints(pixels, self.camera_mtx, self.distortion_mtx))
 
-
         pixel_direction = np.asarray([direction_vector[0], direction_vector[1], 1])
 
         track_plane_norm_vec = self.camera_to_race_track[2, 0:3]
@@ -423,34 +414,23 @@ class SlotCarTracker:
 
 if __name__ == "__main__":
 
-    trackSectionList = []
-
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-
-    trackSectionList.append(0)
-    trackSectionList.append(0)
-    trackSectionList.append(0)
-
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-
-    trackSectionList.append(0)
-    trackSectionList.append(0)
-    trackSectionList.append(0)
+    trackSectionList = [
+        Sections.CW,
+        Sections.CW,
+        Sections.CW,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
+        Sections.CW,
+        Sections.CW,
+        Sections.CW,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
+    ]
 
     slotCarTracker = SlotCarTracker()
 
     slotCarTracker.load_track(trackSectionList)
-
-    #slotCarTracker.detect_closed_loop_track(False, 0.05)
-
-    #slotCarTracker.calculate_camera_to_race_track_transform_test() #Debug testing
-
-    #slotCarTracker.calculate_camera_to_race_track_transform() #cameraa code
-
-    #slotCarTracker.get_xy_position()
 
     slotCarTracker.get_moving_objects()

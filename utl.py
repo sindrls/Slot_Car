@@ -10,4 +10,4 @@ def p_load(name: str):
 
 def p_save(element, name: str):
     with open(f'{name}.pkl', 'wb') as f:
-        return pickle.dump(f)
+        return pickle.dump(element, f)
