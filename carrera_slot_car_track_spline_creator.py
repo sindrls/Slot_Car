@@ -3,6 +3,9 @@ import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 
+
+
+
 class CarreraTrackSection:
 
     def __init__(self, is_cw_inner_slot):
@@ -13,7 +16,7 @@ class CarreraTrackSection:
         self.is_cw_inner_slot = is_cw_inner_slot
 
     def get_xy_vals(self):
-        return  self.xy_param
+        return self.xy_param
 
     def get_phi_vals(self):
         return self.distance_param

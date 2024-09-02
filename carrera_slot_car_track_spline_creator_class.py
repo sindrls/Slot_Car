@@ -3,6 +3,14 @@ import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
 
+from enum import Enum
+
+
+class Sections(Enum):
+    STRAIGHT = 0
+    CW = 1
+    CCW = 2
+
 
 class CarreraTrack:
     def __init__(self, trackSectionTypeList):
