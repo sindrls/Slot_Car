@@ -12,7 +12,6 @@ from udp_sender import CarreraUDPSender
 from utl import p_save, p_load
 
 
-
 def transform_mtx_inv(mtx):
     transformation_inverse = np.zeros([4, 4])
     transformation_inverse[0:3, 0:3] = np.transpose(mtx[0:3, 0:3])
@@ -203,7 +202,6 @@ class SlotCarTracker:
         print("Camera to track transform is: ", self.camera_to_race_track)
         print("Camera to track translation is: ", tvecs)
 
-
     def get_transformation_mtx(self, rvecs, tvecs):
 
         transformation_mtx = np.zeros([4, 4])
@@ -215,7 +213,6 @@ class SlotCarTracker:
         transformation_mtx[0:3, 3] = tvecs[:, 0]
 
         return transformation_mtx
-
 
     def load_track(self, carrera_track_list):
         self.carrera_track = CarreraTrack(carrera_track_list)
@@ -232,7 +229,6 @@ class SlotCarTracker:
         self.l_y = scipy.interpolate.CubicSpline(phi_vals, y_vals)
 
         self.car_tracker = simple_kalman_tracker.SlotCarKalmanTracker(carrera_track_list)
-
 
     def update_base_mtx(self):
 
@@ -352,16 +348,6 @@ class SlotCarTracker:
         new_pos = np.asarray([intersection_pos[0], intersection_pos[1], intersection_pos[2], 1])
 
         return (transform_mtx_inv(self.camera_to_race_track) @ new_pos)[0:2]
-
-    def get_xy_position(self):
-        while True:
-            pixel_position = self.get_aruco_centre_pos()
-            track_position = self.get_pixel_to_track_plane_intersection(pixel_position)
-            print("Position is: ", track_position)
-
-    def finnish_tracking(self):
-        # Destroy all the windows
-        cv2.destroyAllWindows()
 
     def get_moving_objects(self):
         backSub = cv2.createBackgroundSubtractorMOG2()

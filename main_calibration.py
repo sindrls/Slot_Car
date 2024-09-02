@@ -1,6 +1,7 @@
 import numpy as np
 import cv2 as cv
 import glob
+from utl import p_save
 
 # termination criteria
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -38,6 +39,8 @@ cv.destroyAllWindows()
 
 ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
-print("camera matrix is: ", mtx)
-print("distortion matrix is: ", dist)
+print("Saving camera matrix as: ", mtx)
+print("Saving distortion matrix as: ", dist)
 
+p_save(mtx, 'camera_mtx')
+p_save(mtx, 'distortion_mtx')
