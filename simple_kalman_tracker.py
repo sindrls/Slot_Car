@@ -1,10 +1,10 @@
 
 import numpy as np
-import carrera_slot_car_track_spline_creator_class
+from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 import scipy
 
-class SlotCarKalmanTracker:
 
+class SlotCarKalmanTracker:
     def __init__(self, carrera_track_list):
         """ Create a new point at the origin """
 
@@ -17,9 +17,9 @@ class SlotCarKalmanTracker:
         self.Q = np.zeros([2, 2])
         self.Q[1, 1] = 4
 
-        self.curr_timestamp= 0
+        self.curr_timestamp = 0
 
-        self.carrera_track = carrera_slot_car_track_spline_creator_class.CarreraTrack(carrera_track_list)
+        self.carrera_track = CarreraTrack(carrera_track_list)
 
         x_vals, y_vals, phi_vals, end_section_positions = self.carrera_track.generate_track_spline(True)
 
@@ -41,38 +41,29 @@ class SlotCarKalmanTracker:
         d_phi_l_x = self.l_x.derivative()
         d_phi_l_y = self.l_y.derivative()
 
-        H_mat = np.zeros((2,2))
+        H_mat = np.zeros((2, 2))
 
         H_mat[0, 0] = d_phi_l_x(self.state[0])
         H_mat[1, 0] = d_phi_l_y(self.state[0])
 
-        #print("H mat is: ", H_mat)
-        #print("cov is: ", self.cov)
-        #print("inv_part mat is: ", H_mat @ self.cov @ np.transpose(H_mat))
-
         K_inv = H_mat @ self.cov @ np.transpose(H_mat) + R
-
 
         K = self.cov @ np.transpose(H_mat) @ np.linalg.inv(K_inv)
 
-
         self.cov = self.cov - K @ H_mat @ self.cov
-        h = np.zeros((2,1))
+        h = np.zeros((2, 1))
         h[0] = self.l_x(self.state[0])
         h[1] = self.l_y(self.state[0])
 
         self.state = self.state + K @ (z_val - h)
 
-
     def predict_state(self, delta_time):
-
-
         A_mat = np.zeros((2, 2))
         A_mat[0, 1] = delta_time
 
-        self.state = self.state +  A_mat @ self.state
+        self.state = self.state + A_mat @ self.state
 
-        self.cov = self.cov +  (A_mat @ self.cov + self.cov @ np.transpose(A_mat)) + self.Q * delta_time
+        self.cov = self.cov + (A_mat @ self.cov + self.cov @ np.transpose(A_mat)) + self.Q * delta_time
 
         if self.state[0, 0] > self.track_length:
             self.state[0, 0] = self.state[0, 0] - self.track_length
@@ -81,7 +72,7 @@ class SlotCarKalmanTracker:
         return self.state
 
     def get_xy_pos(self, phi):
-        meas = np.zeros((2,1))
+        meas = np.zeros((2, 1))
 
         meas[0] = self.l_x(phi)
         meas[1] = self.l_y(phi)
@@ -101,25 +92,21 @@ if __name__ == "__main__":
     car_state = np.zeros((2, 1))
     car_state[0] = 0.1
 
+    trackSectionList.append(Sections.CW)
+    trackSectionList.append(Sections.CW)
+    trackSectionList.append(Sections.CW)
 
+    trackSectionList.append(Sections.STRAIGHT)
 
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-    trackSectionList.append(1)
+    trackSectionList.append(Sections.CW)
+    trackSectionList.append(Sections.CW)
+    trackSectionList.append(Sections.CW)
 
-    trackSectionList.append(0)
-
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-    trackSectionList.append(1)
-
-    trackSectionList.append(0)
+    trackSectionList.append(Sections.STRAIGHT)
 
     tracker = SlotCarKalmanTracker(trackSectionList)
 
     for i in range(timesteps):
-
-
         car_state[1] = 1
         car_state[0] = car_state[0] + car_state[1] * timestep
 
@@ -136,22 +123,3 @@ if __name__ == "__main__":
 
         if car_state[0] > tracker.get_track_length():
             car_state[0] = car_state[0] - tracker.get_track_length()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
