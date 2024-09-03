@@ -1,22 +1,20 @@
 from acados_template import AcadosModel
-from casadi import MX, Function, vertcat, sin, cos, atan2, fabs, inv, sign, fmax, fmin, gt, ge, if_else, exp
+from casadi import MX, sin, cos, vertcat, inv, atan2, if_else
 import casadi as ca
-import slot_car_path
 import numpy as np
 from slot_car_path import get_ca_interp_path
 
+
 def export_slot_car_ode_model() -> AcadosModel:
-
-
     #TODO(ss): finne ut om theta rel er god eller ikke
 
     model_name = 'slot_car'
 
     # constants
 
-    car_weight = 0.1 # mass of car [kg]
-    car_rot_inert = 0.001 # car rotational inertia [kg*m*m]
-    car_length = 0.1 # car lenght [m]
+    car_weight = 0.1  # mass of car [kg]
+    car_rot_inert = 0.001  # car rotational inertia [kg*m*m]
+    car_length = 0.1  # car lenght [m]
 
     #Wheel constants
     regular_slide_speed_tresh = 0.01
@@ -29,10 +27,10 @@ def export_slot_car_ode_model() -> AcadosModel:
     D_d = 1
 
     # set up states & controls (input)
-    theta    = MX.sym('theta')
-    phi      = MX.sym('phi')
-    dtheta   = MX.sym('dtheta')
-    dphi      = MX.sym('dphi')
+    theta   = MX.sym('theta')
+    phi     = MX.sym('phi')
+    dtheta  = MX.sym('dtheta')
+    dphi    = MX.sym('dphi')
 
     x = vertcat(theta, phi, dtheta, dphi)
 
@@ -40,17 +38,15 @@ def export_slot_car_ode_model() -> AcadosModel:
     u = vertcat(F)
 
     # xdot (output)
-    theta_dot    = MX.sym('theta_dot')
-    phi_dot      = MX.sym('phi_dot')
-    dtheta_dot   = MX.sym('dtheta_dot')
-    dphi_dot      = MX.sym('dphi_dot')
+    theta_dot   = MX.sym('theta_dot')
+    phi_dot     = MX.sym('phi_dot')
+    dtheta_dot  = MX.sym('dtheta_dot')
+    dphi_dot    = MX.sym('dphi_dot')
 
     xdot = vertcat(theta_dot, phi_dot, dtheta_dot, dphi_dot)
 
     # parameters
     p = []
-
-
 
     #racetrack:
 
@@ -64,8 +60,6 @@ def export_slot_car_ode_model() -> AcadosModel:
     d_phi_l_y = ca.jacobian(l_y, phi)
     dd_phi_l_y = ca.jacobian(d_phi_l_x, phi)
 
-
-
     # dynamics
     cos_theta = cos(theta)
     sin_theta = sin(theta)
@@ -77,9 +71,9 @@ def export_slot_car_ode_model() -> AcadosModel:
                             d_phi_l_x * sin_theta - d_phi_l_y * cos_theta))
 
     vert_vec = vertcat(car_length * dphi * dphi * (dd_phi_l_x * sin_theta - dd_phi_l_y * cos_theta),
-                           car_length * dtheta * dtheta * (d_phi_l_x * cos_theta + d_phi_l_y * sin_theta))
+                       car_length * dtheta * dtheta * (d_phi_l_x * cos_theta + d_phi_l_y * sin_theta))
 
-    mixing_term = MX.zeros(2,2)
+    mixing_term = MX.zeros(2, 2)
 
     mixing_term[0, 0] = pow(car_length, 2) + car_rot_inert / car_weight
     mixing_term[1, 0] = -car_length * alpha
@@ -155,10 +149,4 @@ def export_slot_car_ode_model() -> AcadosModel:
     model.p = p
     model.name = model_name
 
-
     return model
-
-
-
-
-

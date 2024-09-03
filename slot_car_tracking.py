@@ -1,12 +1,10 @@
 
-from acados_template import AcadosSim, AcadosSimSolver
 import acados_slotcar_model
 import numpy as np
-import matplotlib.pyplot as plt
 import casadi
 
-class slot_car_tracker:
 
+class slot_car_tracker:
     def __init__(self):
         """ Create a new point at the origin """
 
@@ -14,12 +12,12 @@ class slot_car_tracker:
         self.state = np.zeros([4, 1])
         self.cov = np.zeros([4, 4])
         self.Q = np.zeros([4, 4])
-        self.curr_timestamp= 0
-        self.H_jac = casadi.Function('H_jac',[self.model.x],[casadi.jacobian(self.model.z, self.model.x)])
-        self.A = casadi.Function('A',[self.model.x],[casadi.jacobian(self.model.f_expl_expr, self.model.x)])
-        self.h = casadi.Function('h',[self.model.x],[self.model.z])
+        self.curr_timestamp = 0
+        self.H_jac = casadi.Function('H_jac', [self.model.x], [casadi.jacobian(self.model.z, self.model.x)])
+        self.A = casadi.Function('A', [self.model.x], [casadi.jacobian(self.model.f_expl_expr, self.model.x)])
+        self.h = casadi.Function('h', [self.model.x], [self.model.z])
         dt = casadi.SX.sym("dt")
-        self.x_next = casadi.Function('x_next',[self.model.x], [self.model.x + self.model.f_expl_expr * dt])
+        self.x_next = casadi.Function('x_next', [self.model.x], [self.model.x + self.model.f_expl_expr * dt])
 
     def measurement_update(self, measurement):
 
@@ -37,10 +35,3 @@ class slot_car_tracker:
         A_mat = self.A(self.state)
 
         self.cov = self.cov + delta_time * (A_mat @ self.cov + self.cov @ A_mat.T) + self.Q * delta_time
-
-
-
-
-
-
-
