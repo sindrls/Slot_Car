@@ -60,7 +60,7 @@ class SlotCarTracker:
         self.x_vals = None
         self.carrera_track = None
         self.car_tracker = None
-        self.vid = cv2.VideoCapture(0)  # this is the magic!
+        self.vid = cv2.VideoCapture(2)  # this is the magic!
 
         self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -119,7 +119,7 @@ class SlotCarTracker:
         got_detection = False
 
         # Detect the markers
-        corners, ids, rejected = cv2.detectMarkers(gray_image, self.aruco_dict)
+        corners, ids, rejected = cv2.aruco.detectMarkers(gray_image, self.aruco_dict)
         if len(corners) != 0:
             got_detection = True
             corners2 = cv2.cornerSubPix(gray_image, corners[0], (11, 11), (-1, -1), self.criteria)
@@ -147,7 +147,7 @@ class SlotCarTracker:
 
         # Detect the markers
         test = np.zeros([2, 1])
-        corners, ids, rejected = cv2.detectMarkers(gray_image, self.aruco_dict)
+        corners, ids, rejected = cv2.aruco.detectMarkers(gray_image, self.aruco_dict)
         if len(corners) != 0:
             got_detection = True
             corners2 = np.squeeze(cv2.cornerSubPix(gray_image, corners[0], (11, 11), (-1, -1), self.criteria)).T
@@ -198,8 +198,10 @@ class SlotCarTracker:
 
         self.camera_to_race_track = self.get_transformation_mtx(rvecs, tvecs)
 
-        print("Camera to track transform is: ", self.camera_to_race_track)
+        print("Saving camera to track transform: ", self.camera_to_race_track)
         print("Camera to track translation is: ", tvecs)
+
+        p_save(self.camera_to_race_track, 'camera_to_race_track')
 
     def get_transformation_mtx(self, rvecs, tvecs):
 
@@ -399,6 +401,7 @@ class SlotCarTracker:
 
 if __name__ == "__main__":
 
+    # regular track
     trackSectionList = [
         Sections.CW,
         Sections.CW,
@@ -414,8 +417,27 @@ if __name__ == "__main__":
         Sections.STRAIGHT,
     ]
 
+    # track from 3.09.2024
+    trackSectionList = [
+        Sections.CW,
+        Sections.CW,
+        Sections.CW,
+        Sections.STRAIGHT,
+        Sections.CW,
+        Sections.STRAIGHT,
+        Sections.CCW,
+        Sections.CCW,
+        Sections.CCW,
+        Sections.CCW,
+        Sections.CCW,
+        Sections.STRAIGHT,
+        Sections.CW,
+        Sections.STRAIGHT,
+    ]
+
     slotCarTracker = SlotCarTracker()
 
     slotCarTracker.load_track(trackSectionList)
+    slotCarTracker.calculate_camera_to_race_track_transform()  # Generate new transform
 
     slotCarTracker.get_moving_objects()
