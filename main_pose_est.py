@@ -69,11 +69,10 @@ class SlotCarTracker:
 
         self.frame = self.vid.read()
 
-        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
-        parameters = cv2.aruco.DetectorParameters()
+        self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
 
         # Create the ArUco detector
-        self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+        #self.detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
         self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
@@ -120,7 +119,7 @@ class SlotCarTracker:
         got_detection = False
 
         # Detect the markers
-        corners, ids, rejected = self.detector.detectMarkers(gray_image)
+        corners, ids, rejected = cv2.detectMarkers(gray_image, self.aruco_dict)
         if len(corners) != 0:
             got_detection = True
             corners2 = cv2.cornerSubPix(gray_image, corners[0], (11, 11), (-1, -1), self.criteria)
@@ -148,7 +147,7 @@ class SlotCarTracker:
 
         # Detect the markers
         test = np.zeros([2, 1])
-        corners, ids, rejected = self.detector.detectMarkers(gray_image)
+        corners, ids, rejected = cv2.detectMarkers(gray_image, self.aruco_dict)
         if len(corners) != 0:
             got_detection = True
             corners2 = np.squeeze(cv2.cornerSubPix(gray_image, corners[0], (11, 11), (-1, -1), self.criteria)).T
