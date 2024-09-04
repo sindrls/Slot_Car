@@ -17,11 +17,11 @@ class CarreraTrack:
 
         self.trackSectionList = []
         for i in trackSectionTypeList:
-            if i == 0:
+            if i == Sections.STRAIGHT:
                 self.trackSectionList.append(StraightTrack())
-            elif i == 1:
+            elif i == Sections.CW:
                 self.trackSectionList.append(ClockWiseTrack_60_25())
-            elif i == 2:
+            elif i == Sections.CCW:
                 self.trackSectionList.append(CounterClockWiseTrack_60_25())
 
     def generate_track_spline(self, is_cw_inner_slot):
