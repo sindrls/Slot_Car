@@ -43,4 +43,4 @@ print("Saving camera matrix as: ", mtx)
 print("Saving distortion matrix as: ", dist)
 
 p_save(mtx, 'camera_mtx')
-p_save(mtx, 'distortion_mtx')
+p_save(dist, 'distortion_mtx')
