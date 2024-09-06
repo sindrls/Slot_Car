@@ -26,7 +26,7 @@ def dynamic_regularized_friction_model(vel):
 
 
 def lift_Cd(angle):
-    return np.sin()
+    return np.sin(0)
 
 
 idx = 0

@@ -231,6 +231,7 @@ class SlotCarTracker:
 
         self.car_tracker = simple_kalman_tracker.SlotCarKalmanTracker(carrera_track_list)
 
+
     def update_base_mtx(self):
 
         self.first_image = True

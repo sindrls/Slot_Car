@@ -74,6 +74,8 @@ def get_ca_interp_path():
     l_x = ca.interpolant('l_x', 'bspline', [phi_vals_tot], l_x_vals_tot)
     l_y = ca.interpolant('l_y', 'bspline', [phi_vals_tot], l_y_vals_tot)
 
+    print("Path length is: ", path_length)
+
 
 
     return l_x, l_y, path_length
