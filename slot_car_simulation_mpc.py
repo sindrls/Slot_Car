@@ -25,7 +25,7 @@ def setup(x0, Fmax, N_horizon, Tf, RTI=False):
     ocp.cost.cost_type = 'NONLINEAR_LS'
     ocp.cost.cost_type_e = 'NONLINEAR_LS'
 
-    Q_mat = 2*np.diag([0, 0, 0, -1])
+    Q_mat = 2*np.diag([0.1, 10000, 0.1, 0.1])
     R_mat = 2*np.diag([1e-2])
 
     ocp.cost.W = scipy.linalg.block_diag(Q_mat, R_mat)
@@ -72,17 +72,21 @@ def setup(x0, Fmax, N_horizon, Tf, RTI=False):
 def main(use_RTI=False):
 
     x0 = np.array([0.0, 0.0, 0.0, 0.1])
-    Fmax = 1
+    Fmax = 0.5
 
-    Tf = .2
-    N_horizon = 10
+    v_max = 1
+
+    Tf = 2
+    N_horizon = 100
+
+    timestep = Tf / float(N_horizon)
 
     ocp_solver, integrator = setup(x0, Fmax, N_horizon, Tf, use_RTI)
 
     nx = ocp_solver.acados_ocp.dims.nx
     nu = ocp_solver.acados_ocp.dims.nu
 
-    Nsim = 100
+    Nsim = 1000
     simX = np.zeros((Nsim+1, nx))
     simU = np.zeros((Nsim, nu))
 
@@ -96,12 +100,31 @@ def main(use_RTI=False):
         t = np.zeros((Nsim))
 
     # do some initial iterations to start with a good initial guess
-    num_iter_initial = 5
+    num_iter_initial = 0
+
+    for j in range(0, N_horizon):
+        yref = np.array([0, x0[1] + j * timestep * v_max, 0, v_max, 0])
+        ocp_solver.set(j, "yref", yref)
+    yref_N = np.array([0, x0[1] + N_horizon * timestep * v_max, 0, v_max])
+    ocp_solver.set(N_horizon, "yref", yref_N)
+
     for _ in range(num_iter_initial):
         ocp_solver.solve_for_x0(x0_bar = x0)
 
     # closed loop
     for i in range(Nsim):
+        print("Sim idx is: ", i)
+        x_curr = simX[i, :]
+        #print(x_curr)
+        for j in range(0, N_horizon):
+            yref = np.array([0, x_curr[1] + j * timestep * v_max, 0, v_max, 0])
+            ocp_solver.set(j, "yref", yref)
+
+        #print(yref)
+
+        yref_N = np.array([0, x0[1] + N_horizon * timestep * v_max, 0, v_max])
+        ocp_solver.set(N_horizon, "yref", yref_N)
+
 
         if use_RTI:
             # preparation phase
@@ -124,10 +147,20 @@ def main(use_RTI=False):
             # solve ocp and get next control input
             simU[i,:] = ocp_solver.solve_for_x0(x0_bar = simX[i, :])
 
+            print (simU[i,:])
+
             t[i] = ocp_solver.get_stats('time_tot')
 
         # simulate system
         simX[i+1, :] = integrator.simulate(x=simX[i, :], u=simU[i,:])
+        #simX[i + 1, :] = integrator.simulate(x=simX[i, :], u=0.1)
+
+
+    #plt.plot(simU)
+    plt.plot(simX)
+
+    plt.show()
+
 
     # evaluate timings
     if use_RTI:
@@ -145,12 +178,13 @@ def main(use_RTI=False):
 
     # plot results
     model = ocp_solver.acados_ocp.model
+
     #plot_pendulum(np.linspace(0, (Tf/N_horizon)*Nsim, Nsim+1), Fmax, simU, simX, latexify=False, time_label=model.t_label, x_labels=model.x_labels, u_labels=model.u_labels)
 
     ocp_solver = None
 
 
 if __name__ == '__main__':
-    main(use_RTI=False)
+    #main(use_RTI=False)
     main(use_RTI=True)
 
