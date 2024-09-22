@@ -17,9 +17,9 @@ def export_slot_car_ode_model() -> AcadosModel:
     car_length = 0.1  # car lenght [m]
 
     #Wheel constants
-    regular_slide_speed_tresh = 0.01
-    regular_slide_frict_coeff = 0.4
-    regular_sin_scaling_coeff = 1.9
+    regular_slide_speed_tresh = 6.5
+    regular_slide_frict_coeff = 2
+    regular_sin_scaling_coeff = 1.8
     wheel_arm = 0.1
 
     #motor params

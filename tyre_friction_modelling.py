@@ -4,13 +4,13 @@ from matplotlib import pyplot as plt
 atan_slide_speed_tresh = 0.01
 atan_slide_frict_coeff = 1
 
-regular_slide_speed_tresh = 0.01
-regular_slide_frict_coeff = 0.8
-regular_sin_scaling_coeff = 1.9
+regular_slide_speed_tresh = 20
+regular_slide_frict_coeff = 2
+regular_sin_scaling_coeff = 1.8
 
 data_points = 1000
 
-test_velocities = np.linspace(-0, np.pi, data_points)
+test_velocities = np.linspace(-np.pi /3, np.pi /3, data_points)
 
 atan_friction = np.zeros(data_points)
 regular_friction = np.zeros(data_points)
@@ -22,7 +22,7 @@ def dynamic_atan_friction_model(vel):
 
 def dynamic_regularized_friction_model(vel):
     return regular_slide_frict_coeff * np.sin(
-        regular_sin_scaling_coeff * np.arctan((1 / (np.pi * regular_slide_speed_tresh)) * vel))
+        regular_sin_scaling_coeff * np.arctan(regular_slide_speed_tresh * vel))
 
 
 def lift_Cd(angle):
@@ -32,12 +32,12 @@ def lift_Cd(angle):
 idx = 0
 for vel in test_velocities:
     atan_friction[idx] = dynamic_atan_friction_model(vel)
-    regular_friction[idx] = lift_Cd(vel)
+    regular_friction[idx] = dynamic_regularized_friction_model(vel)
     idx = idx + 1
 
 #plt.plot(test_velocities, atan_friction, 'b', label='atan friction')
 
-plt.plot(test_velocities, regular_friction, 'g', label='regular friction')
+plt.plot(test_velocities * (180 / np.pi), regular_friction, 'g', label='regular friction')
 
 plt.legend(loc='best')
 

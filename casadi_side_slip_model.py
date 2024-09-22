@@ -14,22 +14,22 @@ def export_slot_car_ode_model() -> AcadosModel:
 
     # constants
 
-    car_weight = 0.1 # mass of car [kg]
-    car_rot_inert = 0.001 # car rotational inertia [kg*m*m]
+    car_weight = 0.15 # mass of car [kg]
+    car_rot_inert = 0.01 # car rotational inertia [kg*m*m]
     car_length = 0.1 # car lenght [m]
 
     #Wheel constants
-    regular_slide_speed_tresh = 0.01
-    regular_slide_frict_coeff = 0.4
-    regular_sin_scaling_coeff = 1.9
-    wheel_arm = 0.1
+    regular_slide_speed_tresh = 6.5
+    regular_slide_frict_coeff = 1.5
+    regular_sin_scaling_coeff = 2.1
+    wheel_arm = 0.15
 
     #motor params
     K_p = 1
     D_d = 1
 
     #circle radius
-    radius = 1
+    radius = 0.3
 
     # set up states & controls (input)
     theta    = MX.sym('theta')
@@ -71,11 +71,13 @@ def export_slot_car_ode_model() -> AcadosModel:
     cos_theta = cos(theta)
     sin_theta = sin(theta)
 
-    alpha = if_else(d_phi_l_x * sin_theta - d_phi_l_y * cos_theta > 1,
-                    1,
-                    if_else(d_phi_l_x * sin_theta - d_phi_l_y * cos_theta < -1,
-                            -1,
-                            d_phi_l_x * sin_theta - d_phi_l_y * cos_theta))
+    #alpha = if_else(d_phi_l_x * sin_theta - d_phi_l_y * cos_theta > 1,
+    #                1,
+    #                if_else(d_phi_l_x * sin_theta - d_phi_l_y * cos_theta < -1,
+    #                        -1,
+    #                        d_phi_l_x * sin_theta - d_phi_l_y * cos_theta))
+
+    alpha = d_phi_l_x * sin_theta - d_phi_l_y * cos_theta
 
     vert_vec = vertcat(car_length * dphi * dphi * (dd_phi_l_x * sin_theta - dd_phi_l_y * cos_theta),
                            car_length * dtheta * dtheta * (d_phi_l_x * cos_theta + d_phi_l_y * sin_theta))
@@ -102,7 +104,7 @@ def export_slot_car_ode_model() -> AcadosModel:
     rot_mat[1, 1] = cos_theta
 
     body_speed = rot_mat @ cart_vel
-    velocity_dir = atan2(body_speed[1], body_speed[0])
+    velocity_dir = atan2(body_speed[1], -body_speed[0])
 
     car_angle = np.arctan2(sin(theta), cos(theta))
 
@@ -159,7 +161,7 @@ def export_slot_car_ode_model() -> AcadosModel:
     theta_no_slip = np.arcsin(wheel_arm / radius)
 
 
-    return model, theta_no_slip
+    return model, theta_no_slip, radius
 
 
 
