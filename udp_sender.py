@@ -11,7 +11,7 @@ class CarreraUDPSender:
     0 is the lowest speed, 255 is the highest
 
     '''
-    def __init__(self, ip: str = "192.168.97.61"):
+    def __init__(self, ip: str = "172.20.10.2"):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.addr = (ip, 12021)  # Make sure the IP is correct
 

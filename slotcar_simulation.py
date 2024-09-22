@@ -5,41 +5,39 @@ import matplotlib.pyplot as plt
 
 import matplotlib.animation as animation
 
-import acados_slotcar_model
-
 ## TODO(ss): Lag friksjonskoeffesient i slot avhengig av trykk på tvers av slot, Dobbeltsjekke e.o.m.
 
 
 #test = acados_slotcar_model.export_slot_car_ode_model()
 
 
-show_plot = True
-playback_ratio = 0.1
+show_plot = False
+playback_ratio = 0.01
 
 has_slid = False
 track_car_angle_limit = np.pi * (3/5)
 
-car_weight = 0.1
+car_weight = 0.114
 car_rot_inert = 0.001
-car_length = 0.1
+car_length = 0.055
 wheel_arm = 0.1
 
 K_p = 1
 D_d = 1
 
-regular_slide_speed_tresh = 0.01
-regular_slide_frict_coeff = 0.4
-regular_sin_scaling_coeff = 1.9
+regular_slide_speed_tresh = 20
+regular_slide_frict_coeff = 1.5
+regular_sin_scaling_coeff = 1.8
 
-u = 0.1
+u = 5
 
 
 timesteps = 1000
-timestep = 0.01
+timestep = 0.001
 
 duration = timestep * timesteps
 
-x_init = [0, 0, 0, 1]
+x_init = [0, 0, 0, 5]
 x_t = np.zeros([4, timesteps])
 x_t[:,0] = x_init
 
@@ -146,7 +144,7 @@ def tire_friction_body(x):
     rot_mat[1, 1] = np.cos(x[0])
 
     body_speed = rot_mat@cart_vel
-    velocity_dir = np.arctan2(body_speed[1], body_speed[0])
+    velocity_dir = np.arctan2(body_speed[1], -body_speed[0])
 
     car_angle = np.arctan2(np.sin(x[0]), np.cos(x[0]))
 
@@ -156,6 +154,8 @@ def tire_friction_body(x):
     track_angle_val = np.arctan2(-norm_track[1], -norm_track[0])
 
     theta_rel = car_angle - track_angle_val
+
+    #print(velocity_dir)
 
     body_friction = np.zeros(2)
 

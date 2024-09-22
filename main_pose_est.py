@@ -22,7 +22,7 @@ def transform_mtx_inv(mtx):
 
 
 def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
-    V_max = 150
+    V_max = 170
     K = 0.05
     p = 0.1
 
@@ -60,7 +60,7 @@ class SlotCarTracker:
         self.x_vals = None
         self.carrera_track = None
         self.car_tracker = None
-        self.vid = cv2.VideoCapture(2)  # this is the magic!
+        self.vid = cv2.VideoCapture(0)  # this is the magic!
 
         self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -100,6 +100,14 @@ class SlotCarTracker:
         self.track_detections_params = np.empty(0)
 
         self.use_time_parametrisation = True
+
+        # Plot params
+
+        self.num_scatters = 10
+
+        self.scatters = np.zeros([2,self.num_scatters])
+
+        self.scatter_idx = 0
 
     def detect_aruco_marker_pose(self):
         # Capture the video frame
@@ -354,7 +362,13 @@ class SlotCarTracker:
     def get_moving_objects(self):
         backSub = cv2.createBackgroundSubtractorMOG2()
         prev_timestamp = time.time()
+        plt.axis([-1, 1, -1, 1])
+
         while True:
+            self.scatter_idx = self.scatter_idx + 1
+            if self.scatter_idx > (self.num_scatters - 1):
+                self.scatter_idx = 0
+
             new_timestamp = time.time()
             time_step = new_timestamp - prev_timestamp
             prev_timestamp = new_timestamp
@@ -370,8 +384,15 @@ class SlotCarTracker:
                 min_contour_area = 2000  # Define your minimum area threshold
                 large_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_contour_area]
 
+                max_contour_area = 20000  # Define your minimum area threshold
+                mid_contours = [cnt for cnt in large_contours if cv2.contourArea(cnt) < max_contour_area]
+
+                closest_pos = np.zeros([3, 1])
+                delta_pos = np.zeros([3, 1])
+                min_dist = 9999
+
                 frame_out = self.frame.copy()
-                for cnt in large_contours:
+                for cnt in mid_contours:
                     x, y, w, h = cv2.boundingRect(cnt)
                     frame_out = cv2.rectangle(self.frame, (x, y), (x + w, y + h), (0, 0, 200), 3)
                     centre_pos = np.zeros((1, 2))
@@ -379,25 +400,44 @@ class SlotCarTracker:
                     centre_pos[0, 1] = y + h / 2.0
                     pos = self.get_pixel_to_track_plane_intersection(centre_pos)
 
-                    R = np.zeros((2, 2))
-                    R[0, 0] = 0.5
-                    R[1, 1] = 0.5
+                    meas_xy_pos = np.asarray([pos[0], pos[1]])
+                    delta_pos = np.asarray([self.l_x(self.car_tracker.get_state()[0]) - pos[0], self.l_y(self.car_tracker.get_state()[1]) - pos[1]])
 
-                    self.car_tracker.measurement_update(pos, R)
-                    #print("Car pos is: ", pos)
-                    car_state = self.car_tracker.get_state()
-                    print("Car state is: ", car_state)
+                    dist = np.sqrt(np.transpose(delta_pos) @ delta_pos)
 
-                    v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], 0.5, 10, 0.4)
-                    print("V_ref is: ", v_ref)
+                    if dist < min_dist:
+                        closest_pos = pos
+                        min_dist = dist
 
-                    self.udpSender.send(int(v_ref))
+                self.scatters[0, self.scatter_idx] = closest_pos[0]
+                self.scatters[1, self.scatter_idx] = closest_pos[1]
+                R = np.zeros((2, 2))
+                R[0, 0] = 0.5
+                R[1, 1] = 0.5
+
+                self.car_tracker.measurement_update(closest_pos, R)
+                #print("Car pos is: ", closest_pos)
+                #print("Delta dist is: ", min_dist)
+                car_state = self.car_tracker.get_state()
+                print("Car state is: ", car_state)
+
+                plt.scatter(self.scatters[0,:], self.scatters[1,:], c='orange')
+                plt.scatter(self.l_x(self.car_tracker.get_state()[0]), self.l_y(self.car_tracker.get_state()[0]), s=500)
+                plt.plot(self.x_vals, self.y_vals, lw=3)
+                plt.pause(0.01)
+                plt.clf()
+
+                v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], 0.5, 10, 0.4)
+                #print("V_ref is: ", v_ref)
+
+                self.udpSender.send(int(v_ref))
 
                 # Display the resulting frame
                 cv2.imshow('Frame_final', frame_out)
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
+        plt.show()
 
 
 if __name__ == "__main__":
@@ -409,36 +449,16 @@ if __name__ == "__main__":
         Sections.CW,
         Sections.STRAIGHT,
         Sections.STRAIGHT,
-        Sections.STRAIGHT,
         Sections.CW,
         Sections.CW,
         Sections.CW,
         Sections.STRAIGHT,
-        Sections.STRAIGHT,
-        Sections.STRAIGHT,
-    ]
-
-    # track from 3.09.2024
-    trackSectionList = [
-        Sections.CW,
-        Sections.CW,
-        Sections.CW,
-        Sections.STRAIGHT,
-        Sections.CW,
-        Sections.STRAIGHT,
-        Sections.CCW,
-        Sections.CCW,
-        Sections.CCW,
-        Sections.CCW,
-        Sections.CCW,
-        Sections.STRAIGHT,
-        Sections.CW,
         Sections.STRAIGHT,
     ]
 
     slotCarTracker = SlotCarTracker()
 
     slotCarTracker.load_track(trackSectionList)
-    slotCarTracker.calculate_camera_to_race_track_transform()  # Generate new transform
+    #slotCarTracker.calculate_camera_to_race_track_transform()  # Generate new transform
 
     slotCarTracker.get_moving_objects()
