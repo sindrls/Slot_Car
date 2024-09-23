@@ -98,7 +98,7 @@ def stability_angle(theta_0,  *, phi_dot_val=1):
 
 def theta_phase_plot():
 
-    SimplePendulum = phaseportrait.PhasePortrait2D(sideSlip, [[-np.pi / 2 ,np.pi / 2], [-4, 4]], Density=5, Title='Simple pendulum', xlabel=r"$\Theta$",
+    SimplePendulum = phaseportrait.PhasePortrait2D(sideSlip, [[-np.pi / 10 ,np.pi / 10], [-4, 4]], MeshDim=30, Density=1, Title='Simple pendulum', xlabel=r"$\Theta$",
                                                    ylabel=r"$\dot{\Theta}$")
     SimplePendulum.add_slider('phi_dot', valinit=1, valinterval=[0.1, 3], valstep=0.1)
 
