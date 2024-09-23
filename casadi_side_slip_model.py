@@ -14,15 +14,14 @@ def export_slot_car_ode_model() -> AcadosModel:
 
     # constants
 
-    car_weight = 0.15 # mass of car [kg]
-    car_rot_inert = 0.01 # car rotational inertia [kg*m*m]
-    car_length = 0.1 # car lenght [m]
+    car_weight = 0.114
+    car_rot_inert = 0.00023
+    car_length = 0.055
+    wheel_arm = 0.1
 
-    #Wheel constants
-    regular_slide_speed_tresh = 6.5
-    regular_slide_frict_coeff = 1.5
-    regular_sin_scaling_coeff = 2.1
-    wheel_arm = 0.15
+    regular_slide_speed_tresh = 20
+    regular_slide_frict_coeff = 0.3
+    regular_sin_scaling_coeff = 1.8
 
     #motor params
     K_p = 1
