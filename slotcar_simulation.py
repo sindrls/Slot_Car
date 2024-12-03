@@ -1,6 +1,7 @@
+
 import numpy as np
 import scipy
-from scipy.integrate import odeint
+
 import matplotlib.pyplot as plt
 
 import matplotlib.animation as animation
@@ -13,7 +14,7 @@ from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 #test = acados_slotcar_model.export_slot_car_ode_model()
 
 
-show_plot = True
+show_plot = False
 playback_ratio = 0.01
 
 use_speed_reg = True
@@ -197,8 +198,8 @@ def tire_friction_body(x):
     return body_friction
 
 def speed_controller(phi, phi_dot, delta_phi, horizon, predict_t):
-    V_max = 2
-    K = 0.05
+    V_max = 2.2
+    K = 0.005
     p = 0.8
 
     exp_val = 0
@@ -239,7 +240,7 @@ def speed_control(u, x, has_slid):
     if use_speed_reg:
         delta_phi = 0.05
         horizon = 5
-        predict_t = 0
+        predict_t = 0.1
         u_val = speed_controller(x[1], x[3], delta_phi, horizon, predict_t)
         motor_force = (K_p * u_val - D_d * x[3])
         throttle_values.append(u_val)
@@ -255,7 +256,7 @@ def speed_control(u, x, has_slid):
     return force, has_slid
 
 
-def slot_car_ode(x,t, sliding):
+def slot_car_ode(x, x_meas, t, sliding):
     x_dot = np.zeros(4)
 
     x_dot[0] = x[2]
@@ -265,7 +266,7 @@ def slot_car_ode(x,t, sliding):
     dynamic_forces = dynamics(x, t)
     internal_forces = np.dot(mixing_mtx,dynamic_forces)
     body_friction = tire_friction_body(x)
-    speed_force, sliding = speed_control(u, x, sliding)
+    speed_force, sliding = speed_control(u, x_meas, sliding)
     #print(x)
     #print(np.linalg.det(mixing_term(x,t)))
 
@@ -277,10 +278,39 @@ def slot_car_ode(x,t, sliding):
 
     return x_dot, sliding
 
+
+# Tracking time delay simulation
+base_delay = 0.1
+base_delay_steps = int(base_delay / timestep)
+
+tracking_frequency = 30.0
+update_steps = int((1.0 / tracking_frequency) / timestep)
+state_buffer_size = 1000
+state_buffer = np.zeros([4, state_buffer_size])
+
+measured_state = x_init
+
+delay_steps = 0
+delay_buffer_idx = 0
+
 for i in range(1, timesteps):
-    d_x, has_slid = slot_car_ode(x_t[:, i - 1], 0, has_slid)
+
+    state_buffer_idx = np.mod(i-1, state_buffer_size)
+
+    if delay_steps == update_steps:
+        delay_steps = 0
+
+        delay_buffer_idx = state_buffer_idx - base_delay_steps
+        measured_state = state_buffer[:, delay_buffer_idx]
+
+    else:
+        delay_steps = delay_steps + 1
+
+
+    d_x, has_slid = slot_car_ode(x_t[:, i - 1], measured_state, 0, has_slid)
 
     x_t[:, i] = x_t[:, i-1] + timestep * d_x
+    state_buffer[:,state_buffer_idx] = x_t[:, i]
 
     if x_t[1,i] > phi_vals[-1]:
         lap_times[0,lap_idx] = i * timestep - prev_lap
