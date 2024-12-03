@@ -20,7 +20,7 @@ def export_slot_car_ode_model() -> AcadosModel:
     wheel_arm = 0.1
 
     regular_slide_speed_tresh = 20
-    regular_slide_frict_coeff = 0.3
+    regular_slide_frict_coeff = 0.35
     regular_sin_scaling_coeff = 1.8
 
     #motor params
@@ -28,7 +28,7 @@ def export_slot_car_ode_model() -> AcadosModel:
     D_d = 1
 
     #circle radius
-    radius = 0.3
+    radius = 0.25
 
     # set up states & controls (input)
     theta    = MX.sym('theta')
@@ -119,7 +119,7 @@ def export_slot_car_ode_model() -> AcadosModel:
         regular_sin_scaling_coeff * MX.arctan(regular_slide_speed_tresh * MX.arctan(velocity_dir)))
 
     tyre_torque = (wheel_arm - sin(theta_rel) * sin(theta_rel) * car_length) * body_friction / car_rot_inert
-    tyre_force = sin(theta_rel) * body_friction / car_weight
+    tyre_force = -sin(theta_rel) * body_friction / car_weight
 
     tyre_vals = vertcat(tyre_torque,
                         tyre_force)
@@ -131,7 +131,7 @@ def export_slot_car_ode_model() -> AcadosModel:
     track_dir[0] = d_phi_l_x
     track_dir[1] = d_phi_l_y
     #TODO(ss) Hvorfor gjør motor torque at simuleringen divergerer?
-    motor_torque = 0.5 * sin(2 * theta_rel) * (K_p * u - D_d * dphi) * car_length
+    motor_torque = -0.5 * sin(2 * theta_rel) * (K_p * u - D_d * dphi) * car_length
     motor_force = cos(theta_rel) * (K_p * u - D_d * dphi)
 
     motor_vals = vertcat(motor_torque / car_rot_inert,

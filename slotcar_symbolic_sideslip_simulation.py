@@ -45,7 +45,7 @@ phi = 0
 
 
 
-def sideSlip(side_slip, d_side_slip, *, phi_dot=1):
+def sideSlip(side_slip, d_side_slip, *, phi_dot=2):
     u = d_side_slip
     #theta = side_slip - np.pi / 2 - theta_no_slip
     #theta_dot = d_side_slip + phi_dot / radius
@@ -98,9 +98,9 @@ def stability_angle(theta_0,  *, phi_dot_val=1):
 
 def theta_phase_plot():
 
-    SimplePendulum = phaseportrait.PhasePortrait2D(sideSlip, [[-np.pi / 10 ,np.pi / 10], [-4, 4]], MeshDim=30, Density=1, Title='Simple pendulum', xlabel=r"$\Theta$",
-                                                   ylabel=r"$\dot{\Theta}$")
-    SimplePendulum.add_slider('phi_dot', valinit=1, valinterval=[0.1, 3], valstep=0.1)
+    SimplePendulum = phaseportrait.PhasePortrait2D(sideSlip, [[-np.pi / 10 ,np.pi / 10], [-4, 4]], MeshDim=30, Density=1, Title='Theta phase plot for $ \dot \phi = 2$', xlabel=r"$\Theta$ [rad]",
+                                                   ylabel=r"$\dot{\Theta}$ [rad/s]")
+    #SimplePendulum.add_slider('phi_dot', valinit=1, valinterval=[0.1, 3], valstep=0.1)
 
     fig, ax = SimplePendulum.plot()
 
