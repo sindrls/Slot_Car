@@ -13,6 +13,14 @@ from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 
 #test = acados_slotcar_model.export_slot_car_ode_model()
 
+# Speed control
+V_max = 3.5
+K = 0.025
+p = 1
+lookback_distance = 0.15
+
+lowpass_val = 0
+prev_throttle = 0
 
 show_plot = False
 playback_ratio = 0.01
@@ -34,21 +42,21 @@ regular_slide_speed_tresh = 20
 regular_slide_frict_coeff = 0.35
 regular_sin_scaling_coeff = 1.8
 
-u = 1.75
+u = 1.9
 
-num_rounds = 10
+num_rounds = 3
 
 lap_times = np.zeros([1,num_rounds])
 lap_idx = 0
 
 prev_lap = 0
 
-timesteps = 30000
+timesteps = 8000
 timestep = 0.001
 
 duration = timestep * timesteps
 
-x_init = [np.pi, 0, 0, u]
+x_init = [np.pi, 0, 0, V_max]
 x_t = np.zeros([4, timesteps])
 x_t[:,0] = x_init
 
@@ -60,6 +68,7 @@ throttle_values = []
 
 track_angle = np.zeros(timesteps)
 constraint_forces = np.zeros(timesteps)
+
 
 #circle parameters
 #turn_radius = 0.3
@@ -103,9 +112,13 @@ constraint_forces = np.zeros(timesteps)
 trackSectionList = [
         Sections.STRAIGHT,
         Sections.STRAIGHT,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
         Sections.CW,
         Sections.CW,
         Sections.CW,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
         Sections.STRAIGHT,
         Sections.STRAIGHT,
         Sections.CW,
@@ -198,14 +211,11 @@ def tire_friction_body(x):
     return body_friction
 
 def speed_controller(phi, phi_dot, delta_phi, horizon, predict_t):
-    V_max = 2.2
-    K = 0.005
-    p = 0.8
 
     exp_val = 0
 
     for i in range(horizon):
-        phi_i = i * delta_phi + predict_t * phi_dot + phi
+        phi_i = i * delta_phi + predict_t * phi_dot + phi - lookback_distance
         d_phi_l_x_val = d_phi_l_x(phi_i)
         d_phi_l_y_val = d_phi_l_y(phi_i)
 
@@ -218,7 +228,7 @@ def speed_controller(phi, phi_dot, delta_phi, horizon, predict_t):
 
     return V_max * (np.exp(- K * exp_val))
 
-def speed_control(u, x, has_slid):
+def speed_control(u, x, x_meas, has_slid):
     force = np.zeros(2)
 
     car_angle = np.arctan2(np.sin(x[0]), np.cos(x[0]))
@@ -239,9 +249,9 @@ def speed_control(u, x, has_slid):
 
     if use_speed_reg:
         delta_phi = 0.05
-        horizon = 5
-        predict_t = 0.1
-        u_val = speed_controller(x[1], x[3], delta_phi, horizon, predict_t)
+        horizon = 10
+        predict_t = 0.15
+        u_val = speed_controller(x_meas[1], x_meas[3], delta_phi, horizon, predict_t)
         motor_force = (K_p * u_val - D_d * x[3])
         throttle_values.append(u_val)
     else:
@@ -266,7 +276,7 @@ def slot_car_ode(x, x_meas, t, sliding):
     dynamic_forces = dynamics(x, t)
     internal_forces = np.dot(mixing_mtx,dynamic_forces)
     body_friction = tire_friction_body(x)
-    speed_force, sliding = speed_control(u, x_meas, sliding)
+    speed_force, sliding = speed_control(u, x, x_meas, sliding)
     #print(x)
     #print(np.linalg.det(mixing_term(x,t)))
 
@@ -283,10 +293,12 @@ def slot_car_ode(x, x_meas, t, sliding):
 base_delay = 0.1
 base_delay_steps = int(base_delay / timestep)
 
-tracking_frequency = 30.0
+tracking_frequency = 10.0
 update_steps = int((1.0 / tracking_frequency) / timestep)
-state_buffer_size = 1000
+state_buffer_size = 10000
 state_buffer = np.zeros([4, state_buffer_size])
+
+measured_state_t = np.zeros([4,timesteps])
 
 measured_state = x_init
 
@@ -311,6 +323,7 @@ for i in range(1, timesteps):
 
     x_t[:, i] = x_t[:, i-1] + timestep * d_x
     state_buffer[:,state_buffer_idx] = x_t[:, i]
+    measured_state_t[:,i] = measured_state
 
     if x_t[1,i] > phi_vals[-1]:
         lap_times[0,lap_idx] = i * timestep - prev_lap
@@ -327,9 +340,18 @@ for i in range(1, timesteps):
 
     track_angle[i] = track_val - car_angle
 
-    constraint_forces[i] = 0.5 * car_weight * (pow(d_phi_l_x(x_t[1, i]) * x_t[3, i] - car_length * np.sin(x_t[0, i]) * x_t[2, i], 2) \
-                                + pow(d_phi_l_y(x_t[1, i]) * x_t[3, i] + car_length * np.cos(x_t[0, i]) * x_t[2, i], 2)) \
-                                + 0.5 * car_rot_inert * pow(x_t[2, i], 2)
+    phi_i = x_t[1,i]
+    d_phi_l_x_val = d_phi_l_x(phi_i)
+    d_phi_l_y_val = d_phi_l_y(phi_i)
+
+    dd_phi_l_x_val = dd_phi_l_x(phi_i)
+    dd_phi_l_y_val = dd_phi_l_y(phi_i)
+
+    constraint_forces[i] = abs((d_phi_l_x_val * dd_phi_l_y_val - dd_phi_l_x_val * d_phi_l_y_val))
+
+    #constraint_forces[i] = 0.5 * car_weight * (pow(d_phi_l_x(x_t[1, i]) * x_t[3, i] - car_length * np.sin(x_t[0, i]) * x_t[2, i], 2) \
+    #                            + pow(d_phi_l_y(x_t[1, i]) * x_t[3, i] + car_length * np.cos(x_t[0, i]) * x_t[2, i], 2)) \
+    #                            + 0.5 * car_rot_inert * pow(x_t[2, i], 2)
 
 print("avg Lap time is ", np.mean(lap_times))
 print("Variance  is: ",np.std(lap_times) )
@@ -349,11 +371,9 @@ def update(frame):
     car_pos = [l_x(x_t[1, idx]) + car_length * np.cos(x_t[0, idx]), l_y(x_t[1, idx]) + car_length * np.sin(x_t[0, idx])]
     ax.plot(l_x(spline_points), l_y(spline_points), lw=3)
     ax.plot([slot_pos[0], car_pos[0]], [slot_pos[1], car_pos[1]], lw=3)
-    ax.set(xlim=[- 5 * turn_radius - car_length, 5 * turn_radius + car_length],
+    ax.set(xlim=[-1 * turn_radius - car_length, 10 * turn_radius + car_length],
           ylim=[-5 * turn_radius - car_length, 5 * turn_radius + car_length], xlabel='Meters', ylabel='Meters')
 
-    #ax[1].clear()
-    #ax[1].plot(constraint_forces[0:idx])
 
 if show_plot:
 
@@ -366,6 +386,7 @@ if show_plot:
     plt.plot(t, x_t[2, :], 'b', label='angular_speed')
 
     plt.plot(t, x_t[3, :], 'y', label='speed')
+    plt.plot(t, measured_state_t[3,:], label='Measured state')
 
     plt.legend(loc='best')
 
