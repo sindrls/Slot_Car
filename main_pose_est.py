@@ -21,10 +21,14 @@ def transform_mtx_inv(mtx):
     return transformation_inverse
 
 
-def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
-    V_max = 170
-    K = 0.05
-    p = 0.1
+
+def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t, path_length):
+    # Speed control
+    V_max = 95 #145
+    K = 0 #0.03
+    p = 1
+    lookback_distance = 0
+
 
     d_phi_l_x = l_x.derivative()
     d_phi_l_y = l_y.derivative()
@@ -35,7 +39,8 @@ def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
     exp_val = 0
 
     for i in range(horizon):
-        phi_i = i * delta_phi + predict_t * phi_dot + phi
+        phi_i = i * delta_phi + predict_t * phi_dot + phi - lookback_distance
+        phi_i = np.mod(phi_i, path_length)
         d_phi_l_x_val = d_phi_l_x(phi_i)
         d_phi_l_y_val = d_phi_l_y(phi_i)
 
@@ -44,9 +49,9 @@ def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t):
 
         kappa = abs((d_phi_l_x_val * dd_phi_l_y_val - dd_phi_l_x_val * d_phi_l_y_val))
 
-        exp_val = exp_val + (p**i) * kappa
+        exp_val = exp_val + (p ** i) * kappa
 
-    return V_max * (math.e**(- K * exp_val))
+    return V_max * (np.exp(- K * exp_val))
 
 
 class SlotCarTracker:
@@ -60,7 +65,7 @@ class SlotCarTracker:
         self.x_vals = None
         self.carrera_track = None
         self.car_tracker = None
-        self.vid = cv2.VideoCapture(0)  # this is the magic!
+        self.vid = cv2.VideoCapture(2)  # this is the magic!
 
         self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -419,7 +424,7 @@ class SlotCarTracker:
                 #print("Car pos is: ", closest_pos)
                 #print("Delta dist is: ", min_dist)
                 car_state = self.car_tracker.get_state()
-                print("Car state is: ", car_state)
+                #print("Car state is: ", car_state)
 
                 plt.scatter(self.scatters[0,:], self.scatters[1,:], c='orange')
                 plt.scatter(self.l_x(self.car_tracker.get_state()[0]), self.l_y(self.car_tracker.get_state()[0]), s=500)
@@ -427,8 +432,13 @@ class SlotCarTracker:
                 plt.pause(0.01)
                 plt.clf()
 
-                v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], 0.5, 10, 0.4)
-                #print("V_ref is: ", v_ref)
+                delta_phi = 0.12
+                horizon = 10
+                predict_t = 0.2
+                path_length = self.phi_vals[-1]
+
+                v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], delta_phi, horizon, predict_t, path_length)
+                print("V_ref is: ", v_ref)
 
                 self.udpSender.send(int(v_ref))
 
@@ -449,9 +459,13 @@ if __name__ == "__main__":
         Sections.CW,
         Sections.STRAIGHT,
         Sections.STRAIGHT,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
         Sections.CW,
         Sections.CW,
         Sections.CW,
+        Sections.STRAIGHT,
+        Sections.STRAIGHT,
         Sections.STRAIGHT,
         Sections.STRAIGHT,
     ]
