@@ -24,8 +24,8 @@ def transform_mtx_inv(mtx):
 
 def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t, path_length):
     # Speed control
-    V_max = 95 #145
-    K = 0 #0.03
+    V_max = 148 # 135 #145
+    K = 0.04
     p = 1
     lookback_distance = 0
 
@@ -65,7 +65,7 @@ class SlotCarTracker:
         self.x_vals = None
         self.carrera_track = None
         self.car_tracker = None
-        self.vid = cv2.VideoCapture(2)  # this is the magic!
+        self.vid = cv2.VideoCapture(0)  # this is the magic!
 
         self.vid.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         self.vid.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -108,7 +108,7 @@ class SlotCarTracker:
 
         # Plot params
 
-        self.num_scatters = 10
+        self.num_scatters = 20
 
         self.scatters = np.zeros([2,self.num_scatters])
 
@@ -369,6 +369,7 @@ class SlotCarTracker:
         prev_timestamp = time.time()
         plt.axis([-1, 1, -1, 1])
 
+
         while True:
             self.scatter_idx = self.scatter_idx + 1
             if self.scatter_idx > (self.num_scatters - 1):
@@ -429,6 +430,12 @@ class SlotCarTracker:
                 plt.scatter(self.scatters[0,:], self.scatters[1,:], c='orange')
                 plt.scatter(self.l_x(self.car_tracker.get_state()[0]), self.l_y(self.car_tracker.get_state()[0]), s=500)
                 plt.plot(self.x_vals, self.y_vals, lw=3)
+                plt.xlim((-2, .5))
+                plt.axis("equal")
+                plt.title("Change detection measurements vs. parameterized track")
+                plt.xlabel("x [meters]")
+                plt.ylabel("x [meters]")
+                #plt.legend(("Parameterized track", "Measurements"))
                 plt.pause(0.01)
                 plt.clf()
 
@@ -439,6 +446,10 @@ class SlotCarTracker:
 
                 v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], delta_phi, horizon, predict_t, path_length)
                 print("V_ref is: ", v_ref)
+                print("Avg lap: \n")
+                print(self.car_tracker.get_lap_time_mean())
+                print("std lap: \n")
+                print(self.car_tracker.get_lap_time_std())
 
                 self.udpSender.send(int(v_ref))
 
@@ -447,6 +458,7 @@ class SlotCarTracker:
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
+
         plt.show()
 
 
@@ -473,6 +485,7 @@ if __name__ == "__main__":
     slotCarTracker = SlotCarTracker()
 
     slotCarTracker.load_track(trackSectionList)
+
     #slotCarTracker.calculate_camera_to_race_track_transform()  # Generate new transform
 
     slotCarTracker.get_moving_objects()

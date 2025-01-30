@@ -14,10 +14,10 @@ from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 #test = acados_slotcar_model.export_slot_car_ode_model()
 
 # Speed control
-V_max = 3.5
-K = 0.025
+V_max = 3.05
+K =  0.04
 p = 1
-lookback_distance = 0.15
+lookback_distance = 0.0
 
 lowpass_val = 0
 prev_throttle = 0
@@ -44,14 +44,14 @@ regular_sin_scaling_coeff = 1.8
 
 u = 1.9
 
-num_rounds = 3
+num_rounds = 10
 
 lap_times = np.zeros([1,num_rounds])
 lap_idx = 0
 
 prev_lap = 0
 
-timesteps = 8000
+timesteps = 30000
 timestep = 0.001
 
 duration = timestep * timesteps
@@ -248,9 +248,9 @@ def speed_control(u, x, x_meas, has_slid):
         has_slid = True
 
     if use_speed_reg:
-        delta_phi = 0.05
+        delta_phi = 0.12
         horizon = 10
-        predict_t = 0.15
+        predict_t = 0.2
         u_val = speed_controller(x_meas[1], x_meas[3], delta_phi, horizon, predict_t)
         motor_force = (K_p * u_val - D_d * x[3])
         throttle_values.append(u_val)
@@ -290,7 +290,7 @@ def slot_car_ode(x, x_meas, t, sliding):
 
 
 # Tracking time delay simulation
-base_delay = 0.1
+base_delay = 0.4
 base_delay_steps = int(base_delay / timestep)
 
 tracking_frequency = 10.0

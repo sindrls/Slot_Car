@@ -2,6 +2,8 @@
 import numpy as np
 from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 import scipy
+import time
+
 
 
 class SlotCarKalmanTracker:
@@ -33,6 +35,12 @@ class SlotCarKalmanTracker:
         self.l_y = scipy.interpolate.CubicSpline(phi_vals, y_vals)
 
         self.track_length = phi_vals[-1]
+
+        self.prev_time = time.time()
+
+        self.num_laps_avg = 10
+        self.lap_idx = 0
+        self.lap_times = np.zeros(self.num_laps_avg)
 
     def measurement_update(self, z, R):
         z_val = np.zeros((2, 1))
@@ -67,6 +75,16 @@ class SlotCarKalmanTracker:
 
         if self.state[0, 0] > self.track_length:
             self.state[0, 0] = self.state[0, 0] - self.track_length
+            self.lap_idx = self.lap_idx + 1
+
+            if self.lap_idx >= self.num_laps_avg:
+                self.lap_idx = 0
+
+            new_time = time.time()
+            self.lap_times[self.lap_idx] = new_time - self.prev_time
+            self.prev_time = new_time
+
+
 
     def get_state(self):
         return self.state
@@ -81,6 +99,12 @@ class SlotCarKalmanTracker:
 
     def get_track_length(self):
         return self.track_length
+
+    def get_lap_time_mean(self):
+        return np.mean(self.lap_times)
+
+    def get_lap_time_std(self):
+        return np.std(self.lap_times)
 
 
 if __name__ == "__main__":
