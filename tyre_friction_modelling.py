@@ -4,8 +4,8 @@ from matplotlib import pyplot as plt
 atan_slide_speed_tresh = 0.01
 atan_slide_frict_coeff = 1
 
-regular_slide_speed_tresh = 20
-regular_slide_frict_coeff = 2
+regular_slide_speed_tresh = 200
+regular_slide_frict_coeff = 0.39
 regular_sin_scaling_coeff = 1.8
 
 data_points = 1000
