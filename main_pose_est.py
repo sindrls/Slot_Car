@@ -10,6 +10,9 @@ from carrera_slot_car_track_spline_creator_class import CarreraTrack, Sections
 import simple_kalman_tracker
 from udp_sender import CarreraUDPSender
 from utl import p_save, p_load
+from speed_controller import speed_controller
+
+import argparse
 
 
 def transform_mtx_inv(mtx):
@@ -21,44 +24,16 @@ def transform_mtx_inv(mtx):
     return transformation_inverse
 
 
-
-def speed_controller(l_x, l_y, phi, phi_dot, delta_phi, horizon, predict_t, path_length):
-    # Speed control
-    V_max = 148 # 135 #145
-    K = 0.04
-    p = 1
-    lookback_distance = 0
-
-
-    d_phi_l_x = l_x.derivative()
-    d_phi_l_y = l_y.derivative()
-
-    dd_phi_l_x = d_phi_l_x.derivative()
-    dd_phi_l_y = d_phi_l_y.derivative()
-
-    exp_val = 0
-
-    for i in range(horizon):
-        phi_i = i * delta_phi + predict_t * phi_dot + phi - lookback_distance
-        phi_i = np.mod(phi_i, path_length)
-        d_phi_l_x_val = d_phi_l_x(phi_i)
-        d_phi_l_y_val = d_phi_l_y(phi_i)
-
-        dd_phi_l_x_val = dd_phi_l_x(phi_i)
-        dd_phi_l_y_val = dd_phi_l_y(phi_i)
-
-        kappa = abs((d_phi_l_x_val * dd_phi_l_y_val - dd_phi_l_x_val * d_phi_l_y_val))
-
-        exp_val = exp_val + (p ** i) * kappa
-
-    return V_max * (np.exp(- K * exp_val))
-
-
 class SlotCarTracker:
     def __init__(self):
         # define a video capture object
         self.l_y = None
         self.l_x = None
+        self.d_phi_l_x = None
+        self.d_phi_l_y = None
+        self.dd_phi_l_x = None
+        self.dd_phi_l_y = None
+
         self.end_section_positions = None
         self.phi_vals = None
         self.y_vals = None
@@ -113,6 +88,11 @@ class SlotCarTracker:
         self.scatters = np.zeros([2,self.num_scatters])
 
         self.scatter_idx = 0
+
+        # Speed controller params
+        self.V_max = 148 # 135 #145
+        self.K = 0.04
+        self.p = 1
 
     def detect_aruco_marker_pose(self):
         # Capture the video frame
@@ -241,6 +221,13 @@ class SlotCarTracker:
         self.l_x = scipy.interpolate.CubicSpline(phi_vals, x_vals)
 
         self.l_y = scipy.interpolate.CubicSpline(phi_vals, y_vals)
+
+        self.d_phi_l_x = self.l_x.derivative()
+        self.d_phi_l_y = self.l_y.derivative()
+
+        self.dd_phi_l_x = self.d_phi_l_x.derivative()
+        self.dd_phi_l_y = self.d_phi_l_y.derivative()
+
 
         self.car_tracker = simple_kalman_tracker.SlotCarKalmanTracker(carrera_track_list)
 
@@ -444,7 +431,9 @@ class SlotCarTracker:
                 predict_t = 0.2
                 path_length = self.phi_vals[-1]
 
-                v_ref = speed_controller(self.l_x, self.l_y, car_state[0], car_state[1], delta_phi, horizon, predict_t, path_length)
+                v_ref = speed_controller(self.V_max, self.K, self.p, 
+                                         self.d_phi_l_x, self.d_phi_l_y, self.dd_phi_l_x, self.dd_phi_l_y,
+                                         car_state[0], car_state[1], delta_phi, horizon, predict_t, path_length)
                 print("V_ref is: ", v_ref)
                 print("Avg lap: \n")
                 print(self.car_tracker.get_lap_time_mean())
@@ -486,6 +475,12 @@ if __name__ == "__main__":
 
     slotCarTracker.load_track(trackSectionList)
 
-    #slotCarTracker.calculate_camera_to_race_track_transform()  # Generate new transform
+    # Check for calibration flag
+    # Run with python3 main_pose_est.py --calibrate
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--calibrate", action="store_true")
+    args = parser.parse_args()
+    if args.calibrate:
+        slotCarTracker.calculate_camera_to_race_track_transform()  # Generate new transform
 
     slotCarTracker.get_moving_objects()
