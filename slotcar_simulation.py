@@ -16,7 +16,7 @@ import time
 ## TODO(ss): Lag friksjonskoeffesient i slot avhengig av trykk på tvers av slot, Dobbeltsjekke e.o.m.
 
 # Speed control
-V_max = 3.05
+V_max = 5.0
 K =  0.04
 p = 1
 lookback_distance = 0.0
@@ -53,12 +53,12 @@ lap_idx = 0
 
 prev_lap = 0
 
-timesteps = 1200
+timesteps = 1000
 timestep = 0.005
 
 duration = timestep * timesteps
 
-x_init = [np.pi, 0, 0, V_max]
+x_init = [np.pi, 0, 0, 3]
 x_t = np.zeros([4, timesteps])
 x_t[:,0] = x_init
 
@@ -241,15 +241,13 @@ delay_buffer_idx = 0
 
 mpc_horizon = 15
 mpc_dt = 0.005
-mpc_Q = np.array([5.0, 1.0])
+mpc_Q = np.array([5.0, 0.1, 2.5])
 
 mpc = MPC(V_max, K_p, D_d, mpc_horizon, mpc_dt, mpc_Q, 
-          phi_vals[-1], d_phi_l_x, d_phi_l_y, dd_phi_l_x, dd_phi_l_y, 
+          phi_vals[-1], l_x, l_y, 
           car_length, car_rot_inert, car_weight, wheel_arm,
           regular_slide_frict_coeff, regular_slide_speed_tresh,
           regular_sin_scaling_coeff)
-
-last_optimal_U = None
 
 mpc_time_record = np.zeros(timesteps)
 
@@ -269,10 +267,11 @@ for i in tqdm.tqdm(range(1, timesteps)):
     current_state = x_t[:, i-1]
     if not use_speed_reg:
         t0 = time.time()
-        u, last_optimal_U = mpc.mpc_controller(current_state)
+        last_optimal_U, optimal_X = mpc.mpc_controller(current_state)
         t1 = time.time()
-
         mpc_time_record[i] = t1-t0
+        u = last_optimal_U[0]
+
 
     body_friction = tire_friction_body(current_state)
     speed_force, sliding, u = speed_control(u, current_state, measured_state, has_slid)
@@ -343,14 +342,9 @@ def update(frame):
 
 if show_plot:
 
-    # plt.plot(t, x_t[0, :] / np.pi, 'b', label='angle(t)')
-
     plt.plot(t, x_t[0, :], 'g', label='angle(t)')
-
     plt.plot(t, x_t[1, :], 'r', label='distance(t)')
-
     plt.plot(t, x_t[2, :], 'b', label='angular_speed')
-
     plt.plot(t, x_t[3, :], 'y', label='speed')
     plt.plot(t, measured_state_t[3,:], label='Measured state')
     plt.plot(t, throttle_values, "black", label="throttle")

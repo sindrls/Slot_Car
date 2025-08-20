@@ -1,6 +1,6 @@
 import numpy as np
-from scipy.optimize import minimize
-import time
+import casadi as ca
+import sys
 
 def speed_controller(
     V_max, K, p, d_phi_l_x, d_phi_l_y, dd_phi_l_x, dd_phi_l_y, phi, phi_dot, delta_phi, horizon, predict_t, path_length):
@@ -22,25 +22,25 @@ def speed_controller(
     return V_max * np.exp(- K * exp_val)
 
 class MPC:
-    def __init__(self, V_max, K_p, D_d, N, dt, Q, path_length,
-                 d_phi_l_x, d_phi_l_y, dd_phi_l_x, dd_phi_l_y, 
+    def __init__(self, V_max, K_p, D_d, N, dt, Q, path_length, l_x, l_y, 
                  car_length, car_rot_inert, car_weight, wheel_arm,
                  slide_frict_coeff, slide_speed_thresh, sin_scaling_coeff):
+        
+        # Store params
         self.V_max = V_max
-
         self.K_p = K_p
         self.D_d = D_d
-
         self.N = N
         self.dt = dt
         self.Q = Q
-
         self.path_length = path_length
+        self.l_x = l_x
+        self.d_phi_l_x = self.l_x.derivative()
+        self.dd_phi_l_x = self.d_phi_l_x.derivative()
 
-        self.d_phi_l_x = d_phi_l_x
-        self.d_phi_l_y = d_phi_l_y
-        self.dd_phi_l_x = dd_phi_l_x
-        self.dd_phi_l_y = dd_phi_l_y
+        self.l_y = l_y
+        self.d_phi_l_y = self.l_y.derivative()
+        self.dd_phi_l_y = self.d_phi_l_y.derivative()
 
         self.car_length = car_length
         self.car_rot_inert = car_rot_inert
@@ -55,175 +55,207 @@ class MPC:
         self.tire_friction_time = []
         self.dynamics_time = []
 
-        self.last_optimal_U = np.ones(self.N)*self.V_max
+        # Setup for casadi
+        phi_grid = np.linspace(0, path_length, 100000, endpoint=False)
+        x_grid = l_x(phi_grid)
+        y_grid = l_y(phi_grid)
+        dx_grid = self.d_phi_l_x(phi_grid)
+        dy_grid = self.d_phi_l_y(phi_grid)
+        ddx_grid = self.dd_phi_l_x(phi_grid)
+        ddy_grid = self.dd_phi_l_y(phi_grid)
 
-    def alpha(self, x):
+        self.l_x_casadi = ca.interpolant('l_x', 'linear', [phi_grid], x_grid)
+        self.l_y_casadi = ca.interpolant('l_y', 'linear', [phi_grid], y_grid)
+        self.d_phi_l_x_casadi = ca.interpolant('d_phi_l_x', 'linear', [phi_grid], dx_grid)
+        self.d_phi_l_y_casadi = ca.interpolant('d_phi_l_y', 'linear', [phi_grid], dy_grid)
+        self.dd_phi_l_x_casadi = ca.interpolant('dd_phi_l_x', 'linear', [phi_grid], ddx_grid)
+        self.dd_phi_l_y_casadi = ca.interpolant('dd_phi_l_y', 'linear', [phi_grid], ddy_grid)
 
-        alpha_est = self.d_phi_l_x(x[1]) * np.sin(x[0]) - self.d_phi_l_y(x[1]) * np.cos(x[0])
-        #For numerical stability
-        if alpha_est * alpha_est > 1:
-            normalization_term = 1 / abs(alpha_est)
-        else:
-            normalization_term = 1
+        self.last_optimal_U = np.ones(self.N)
+        self.last_optimal_X = np.tile([np.pi, 0, 0, 3], (self.N+1, 1)).T
 
+        self._build_optimizer()
+
+    def _build_optimizer(self):
+        self.opti = ca.Opti()
+
+        self.X = self.opti.variable(4, self.N+1)
+        self.U = self.opti.variable(self.N)
+
+        self.x0 = self.opti.parameter(4)
+        self.opti.subject_to(self.X[:, 0] == self.x0)
+
+        # Calculating the cost
+        cost = 0
+        for k in range(self.N):
+            x_k = self.X[:,k]
+            u_k = self.U[k]
+
+            _, side_speed_k = self.x_dot_casadi(x_k, u_k)
+
+            cost += self.Q[0] * side_speed_k ** 2
+            cost -= self.Q[1] * self.X[3, k+1]
+            
+        cost += self.Q[2] * ca.sumsqr(self.U[1:] - self.U[:-1])
+
+        self.opti.minimize(cost)
+
+        for k in range(self.N):
+            x_k = self.X[:, k]
+            u_k = self.U[k]
+            x_next = self.step(x_k, u_k)
+            self.opti.subject_to(self.X[:, k+1] == x_next)
+
+        self.opti.subject_to(self.opti.bounded(0, self.U, self.V_max))
+
+        p_opts = {
+            "expand": True,
+            "print_time": 0
+        }
+
+        s_opts = {
+            "max_iter": 50,
+            "print_level": 0,
+            "acceptable_tol": 1e-3, 
+            "max_cpu_time": 0.3
+        }
+        self.opti.solver("ipopt", p_opts, s_opts)
+
+    
+    def mpc_controller(self, x_current):       
+        self.opti.set_value(self.x0, x_current)
+
+        self.opti.set_initial(self.U, self.last_optimal_U)
+        self.opti.set_initial(self.X, self.last_optimal_X)
+
+
+        try:
+            sol = self.opti.solve()
+
+            optimal_U = sol.value(self.U)
+            optimal_X = sol.value(self.X)
+
+    
+        except RuntimeError as e:
+            if "Maximum_Iterations_Exceeded" in str(e) or "Maximum_CpuTime_Exceeded" in str(e):
+                optimal_U = self.opti.debug.value(self.U)
+                optimal_X = self.opti.debug.value(self.X)
+
+            else:
+                print(f"MPC solver failed with an unexpected error: {e}")
+                sys.exit(0)
+        
+        roll_length = 1
+        self.last_optimal_U = np.roll(optimal_U, -roll_length)
+        self.last_optimal_U[-roll_length:] = np.ones(roll_length) * optimal_U[-1]
+        self.last_optimal_X = np.roll(optimal_X, -roll_length, axis=1)
+        self.last_optimal_X[:,-roll_length:] = np.tile(optimal_X[:,-1], (roll_length,1)).T
+
+        return optimal_U, optimal_X
+
+    # Dynamic model
+
+    def step(self, x, u):
+        # RK4
+        # k1, _ = self.x_dot_casadi(x, u)
+        # k2, _ = self.x_dot_casadi(x + self.dt / 2 * k1, u)
+        # k3, _ = self.x_dot_casadi(x + self.dt / 2 * k2, u)
+        # k4, _ = self.x_dot_casadi(x + self.dt * k3, u)
+        # x_next = x + self.dt / 6 * (k1 + 2*k2 + 2*k3 + k4)
+
+        # Forward Euler
+        x_dot, _ = self.x_dot_casadi(x, u)
+        x_next = x + self.dt * x_dot
+
+        return x_next
+
+    def alpha_casadi(self, x):
+        alpha_est = self.d_phi_l_x_casadi(x[1]) * ca.sin(x[0]) - self.d_phi_l_y_casadi(x[1]) * ca.cos(x[0])
+        normalization_term = ca.if_else(alpha_est * alpha_est > 1, 1 / ca.fabs(alpha_est), 1)
         return alpha_est * normalization_term
 
-
-    def mixing_term(self, x, t):
-        # mixing = np.zeros([2, 2])
-        alpha_est = self.alpha(x)
-        mixing = np.array([[pow(self.car_length, 2) + self.car_rot_inert / self.car_weight, -self.car_length * alpha_est],
-                [-self.car_length * alpha_est, 1]])
-
+    def mixing_term_casadi(self, x):
+        alpha_est = self.alpha_casadi(x)
+        mixing = ca.vertcat(
+            ca.horzcat(self.car_length**2 + self.car_rot_inert / self.car_weight, -self.car_length * alpha_est),
+            ca.horzcat(-self.car_length * alpha_est, 1)
+        )
         return mixing
     
-    def matrix_inv_2x2(self, mtx):
+
+    def matrix_inv_2x2_casadi(self, mtx):
         a, b = mtx[0, 0], mtx[0, 1]
         c, d = mtx[1, 0], mtx[1, 1]
         det = a * d - b * c
-        inv = np.array([[d, -b], [-c, a]]) / det
+        inv = ca.vertcat(
+            ca.horzcat(d, -b),
+            ca.horzcat(-c, a)
+        ) / det
         return inv
 
-    def dynamics(self, x, t):
-        dynamic = np.asarray( [ self.car_length * x[3] * x[3] * (self.dd_phi_l_x(x[1]) * np.sin(x[0]) - \
-                                                                 self.dd_phi_l_y(x[1]) * np.cos(x[0])),
-                            self.car_length * x[2] * x[2] * (self.d_phi_l_x(x[1]) * np.cos(x[0]) + \
-                                                             self.d_phi_l_y(x[1]) * np.sin(x[0]))])
-        
-        return dynamic
 
-    def body_speed(self, x):
-        
-        cart_vel = np.zeros(2)
+    def dynamics_casadi(self, x):
+        dyn0 = self.car_length * x[3]**2 * (self.dd_phi_l_x_casadi(x[1]) * ca.sin(x[0]) - self.dd_phi_l_y_casadi(x[1]) * ca.cos(x[0]))
+        dyn1 = self.car_length * x[2]**2 * (self.d_phi_l_x_casadi(x[1]) * ca.cos(x[0]) + self.d_phi_l_y_casadi(x[1]) * ca.sin(x[0]))
+        return ca.vertcat(dyn0, dyn1)
 
-        cart_vel[0] = self.d_phi_l_x(x[1]) * x[3] - self.wheel_arm * np.sin(x[0]) * x[2]
-        cart_vel[1] = self.d_phi_l_y(x[1]) * x[3] + self.wheel_arm * np.cos(x[0]) * x[2]
 
-        rot_mat = np.zeros([2,2])
-
-        rot_mat[0, 0] = np.cos(x[0])
-        rot_mat[0, 1] = np.sin(x[0])
-        rot_mat[1, 0] = -np.sin(x[0])
-        rot_mat[1, 1] = np.cos(x[0])
-
-        return rot_mat@cart_vel
+    def body_speed_casadi(self, x):
+        cart_vel_0 = self.d_phi_l_x_casadi(x[1]) * x[3] - self.wheel_arm * ca.sin(x[0]) * x[2]
+        cart_vel_1 = self.d_phi_l_y_casadi(x[1]) * x[3] + self.wheel_arm * ca.cos(x[0]) * x[2]
+        cart_vel = ca.vertcat(cart_vel_0, cart_vel_1)
+        rot_mat = ca.vertcat(
+            ca.horzcat(ca.cos(x[0]), ca.sin(x[0])),
+            ca.horzcat(-ca.sin(x[0]), ca.cos(x[0]))
+        )
+        body_speed = rot_mat @ cart_vel
+        return body_speed
     
-    def theta_rel(self, x):
-        car_angle = np.mod(x[0] + np.pi, 2*np.pi) - np.pi
-        track_vec = np.asarray([self.d_phi_l_x(x[1]), self.d_phi_l_y(x[1])])
-        track_angle_val = np.arctan2(-track_vec[1], -track_vec[0])
 
+    def theta_rel_casadi(self, x):
+        car_angle = ca.fmod(x[0] + np.pi, 2 * np.pi) - np.pi
+        track_vec_0 = self.d_phi_l_x_casadi(x[1])
+        track_vec_1 = self.d_phi_l_y_casadi(x[1])
+        track_angle_val = ca.atan2(-track_vec_1, -track_vec_0)
         return car_angle - track_angle_val
     
-    def tire_friction_body(self, x, body_speed, theta_rel):
-        velocity_dir = np.arctan2(body_speed[1], -body_speed[0])
 
-        body_friction = np.zeros(2)
+    def tire_friction_body_casadi(self, x, body_speed, theta_rel):
+        velocity_dir = ca.atan2(body_speed[1], -body_speed[0])
+        friction_force = - self.slide_frict_coeff * ca.sin(
+            self.sin_scaling_coeff * ca.atan(self.slide_speed_thresh * ca.atan(velocity_dir)))
+        bf0 = (self.wheel_arm - ca.sin(theta_rel)**2 * self.car_length) * friction_force
+        bf1 = -ca.sin(theta_rel) * friction_force
+        return ca.vertcat(bf0, bf1)
 
-        friction_force = - self.slide_frict_coeff * np.sin(
-            self.sin_scaling_coeff * np.arctan(self.slide_speed_thresh * np.arctan(velocity_dir)))
-
-        body_friction[0] = (self.wheel_arm - np.sin(theta_rel) * np.sin(theta_rel) * self.car_length) * friction_force
-        body_friction[1] = -np.sin(theta_rel) * friction_force
-
-        return body_friction
-
-    def slot_car_dynamics(self, t, x, external_force):
-        x_dot = np.zeros(4)
+    def slot_car_dynamics_casadi(self, x, external_force):
+        x_dot = ca.MX.zeros(4)
         x_dot[0] = x[2]
         x_dot[1] = x[3]
-
-
-        mixing_mtx = self.matrix_inv_2x2(self.mixing_term(x, t))
-        dynamic_forces = self.dynamics(x, t)
-
-        internal_forces = np.dot(mixing_mtx, dynamic_forces)
-
-        force_inertia_vec = np.asarray([1 / self.car_rot_inert, 1 / self.car_weight])
-        x_dot[2:4] = internal_forces + force_inertia_vec * external_force
-
+        mixing_mtx = self.matrix_inv_2x2_casadi(self.mixing_term_casadi(x))
+        dynamic_forces = self.dynamics_casadi(x)
+        internal_forces = mixing_mtx @ dynamic_forces
+        force_inertia_vec = ca.vertcat(1 / self.car_rot_inert, 1 / self.car_weight)
+        x_dot[2] = internal_forces[0] + force_inertia_vec[0] * external_force[0]
+        x_dot[3] = internal_forces[1] + force_inertia_vec[1] * external_force[1]
         return x_dot
     
-    def motor_model(self, x, u, theta_rel):
-        force = np.zeros(2)
 
+    def motor_model_casadi(self, x, u, theta_rel):
         motor_force = (self.K_p * u - self.D_d * x[3])
-        force[0] = -0.5 * np.sin(2 * theta_rel) * motor_force * self.car_length
-        force[1] = np.cos(theta_rel) * motor_force
-
-        return force
+        f0 = -0.5 * ca.sin(2 * theta_rel) * motor_force * self.car_length
+        f1 = ca.cos(theta_rel) * motor_force
+        return ca.vertcat(f0, f1)
     
-    def x_dot(self, x, u):
-
-        body_speed = self.body_speed(x)
-        theta_rel = self.theta_rel(x)
-        speed_force = self.motor_model(x, u, theta_rel)
-        body_friction = self.tire_friction_body(x, body_speed, theta_rel)
+    def x_dot_casadi(self, x, u):
+        body_speed = self.body_speed_casadi(x)
+        theta_rel = self.theta_rel_casadi(x)
+        speed_force = self.motor_model_casadi(x, u, theta_rel)
+        body_friction = self.tire_friction_body_casadi(x, body_speed, theta_rel)
         external_force = speed_force + body_friction
 
-        x_dot = self.slot_car_dynamics(0, x, external_force)
-
-
+        x_dot = self.slot_car_dynamics_casadi(x, external_force)
     
         return x_dot, body_speed[1]
-    
-    def mpc_predict(self, x, u):
-        # RK4 
-        # k1 = self.x_dot(x, u)
-        # k2 = self.x_dot(x + k1 * self.dt / 2.0, u)
-        # k3 = self.x_dot(x + k2 * self.dt / 2.0, u)
-        # k4 = self.x_dot(x + k3 * self.dt, u)
-
-        # x_next = x + (k1 + 2*k2 + 2*k3 + k4) / 6.0 * self.dt
-
-        # Forward euler
-        x_dot, side_speed = self.x_dot(x, u)
-        x_next = x + x_dot * self.dt
-
-        return x_next, side_speed
 
 
-    def mpc_cost_func(self, U, x_current):
-        cost = 0.0
-        predicted_x = np.copy(x_current)
-        
-        for i in range(self.N):
-            u_i = U[i]
-            predicted_x, side_speed = self.mpc_predict(predicted_x, u_i)
-            
-            # Cost of sideways slipping
-
-            side_speed_cost = self.Q[0] * side_speed ** 2
-
-            # Reward for high speed
-            speed_cost = - self.Q[1] * predicted_x[3]
-
-
-            cost += side_speed_cost + speed_cost
-        return cost
-
-    def mpc_controller(self, x_current):        
-        bounds = [(0.0, self.V_max)] * self.N
-        u_guess = np.roll(self.last_optimal_U, -1)
-        u_guess[-1:] = self.V_max
-        u_guess = self.last_optimal_U
-
-        options_dict = {
-            "maxiter": 7, # Max iterations
-            "disp": False # Debug covergence stats
-        }
-
-        result = minimize(
-            fun= self.mpc_cost_func,
-            x0 = u_guess,
-            args = (x_current),
-            method = "SLSQP",
-            bounds=bounds,
-            tol=1e-3,
-            options=options_dict
-        )
-
-        optimal_U = result.x
-
-        self.last_optimal_U = optimal_U
-        return optimal_U[0], optimal_U
